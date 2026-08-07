@@ -1,0 +1,10 @@
+services:
+  opencode-zen-proxy:
+    build:
+      context: .
+    container_name: opencode-zen-proxy
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    restart: unless-stopped

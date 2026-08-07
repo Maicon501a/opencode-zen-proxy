@@ -4,6 +4,7 @@
 
 const { createApp } = require('./server');
 const { config } = require('./config/constants');
+const { FREE_MODELS } = require('./config/models');
 
 const app = createApp();
 
@@ -25,7 +26,9 @@ const server = app.listen(config.port, config.host, () => {
   Backend:           ${config.zenApiBaseUrl} (direct, no local binary)
   Auth mode:         ${authMode}
   Upstream key:      ${config.zenApiKey === 'public' ? '"public" (free-tier models)' : '(configured)'}
-  Free models:       5 models (use with or without "opencode/" prefix)
+  Free models:       ${FREE_MODELS.length} models (use with or without "opencode/" prefix)
+  Temporal context:  ${config.injectTemporalContext ? 'on (injects current date)' : 'off'}
+  WARP failover:     ${config.warpAutoFailover ? `on (socks5://${config.warpSocksHost}:${config.warpSocksPort})` : 'off'}
 
   Examples:
     curl http://${config.host}:${config.port}/v1/chat/completions \\

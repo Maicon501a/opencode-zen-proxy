@@ -10,18 +10,31 @@
     "test:watch": "jest --watch",
     "lint": "eslint src/ tests/"
   },
-  "keywords": ["opencode", "zen", "proxy", "openai-compatible", "ai", "deepseek"],
+  "keywords": [
+    "opencode",
+    "zen",
+    "proxy",
+    "openai-compatible",
+    "ai",
+    "deepseek"
+  ],
   "license": "MIT",
   "packageManager": "pnpm@11.9.0",
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/__tests__/**/*.test.js", "**/?(*.)+(spec|test).js"],
-    "testPathIgnorePatterns": ["/node_modules/"]
+    "testMatch": [
+      "**/__tests__/**/*.test.js",
+      "**/?(*.)+(spec|test).js"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/"
+    ]
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.21.0"
+    "express": "^4.21.0",
+    "socks-proxy-agent": "^7.0.0"
   },
   "devDependencies": {
     "eslint": "^9.0.0",

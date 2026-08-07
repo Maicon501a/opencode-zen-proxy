@@ -3,7 +3,9 @@
 const http = require('http');
 const https = require('https');
 const { URL } = require('url');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 const { config } = require('../config/constants');
+const { ALL_MODELS } = require('../config/models');
 
 /**
  * OpenCode Zen API client (direct mode).
@@ -59,9 +61,10 @@ function normalizeZenError(httpStatus, body) {
  * @param {object} headers         - pre-built headers (auth injected here)
  * @param {string|null} body       - stringified JSON body, if any
  * @param {boolean} stream         - whether to stream the response
+ * @param {boolean} useWarpSocks   - whether to route the request through WARP local SOCKS proxy
  * @returns {Promise<{stream:boolean, response?:object, data?:object, statusCode:number}>}
  */
-function requestZenApi(method, path, headers, body, stream = false) {
+function requestZenApi(method, path, headers, body, stream = false, useWarpSocks = false) {
   return new Promise((resolve, reject) => {
     const baseUrl = new URL(config.zenApiBaseUrl);
     const options = {
@@ -75,6 +78,11 @@ function requestZenApi(method, path, headers, body, stream = false) {
       },
       timeout: 600000, // 10 minutes for long-running generations
     };
+
+    if (useWarpSocks && config.warpAutoFailover) {
+      const proxyUrl = `socks5://${config.warpSocksHost}:${config.warpSocksPort}`;
+      options.agent = new SocksProxyAgent(proxyUrl);
+    }
 
     const requester = baseUrl.protocol === 'http:' ? http : https;
 
@@ -141,12 +149,59 @@ function getAuthHeader() {
 }
 
 /**
- * Strip the "opencode/" provider prefix from a model id, if present.
- * Zen expects bare ids like "deepseek-v4-flash-free".
+ * Short aliases for OpenCode Zen free models, derived at load time from the
+ * single source of truth in config/models.js. The gateway only knows the bare
+ * canonical ids (e.g. "deepseek-v4-flash-free"); friendly short names (as used
+ * by opencode, Kilo and other clients) are mapped here so a request never hits
+ * a non-existent model.
+ *
+ * Each canonical "opencode/<bare>" id contributes the bare id itself and, when
+ * it ends with "-free", the alias without that suffix (e.g. "mimo-v2.5").
+ * Because this table is generated from ALL_MODELS it can never drift from the
+ * catalog (e.g. big-pickle stays covered automatically).
  */
-function stripProviderPrefix(model) {
+const ZEN_MODEL_ALIASES = {};
+for (const model of ALL_MODELS) {
+  const bare = model.id.startsWith('opencode/')
+    ? model.id.slice('opencode/'.length)
+    : model.id;
+  ZEN_MODEL_ALIASES[bare] = bare;
+  if (bare.endsWith('-free')) {
+    ZEN_MODEL_ALIASES[bare.replace('-free', '')] = bare;
+  }
+}
+
+/**
+ * Strip OpenAI Responses-API-style suffixes from a model id. Clients built
+ * against the /responses endpoint (Codex, SDKs) send ids like
+ * "model@responses" or "model-responses"; the chat/completions gateway only
+ * wants the bare model id.
+ */
+function stripResponsesSuffix(model) {
+  const low = model.toLowerCase();
+  for (const suffix of ['-responses', '@responses', '/responses']) {
+    if (low.endsWith(suffix)) {
+      return model.slice(0, model.length - suffix.length);
+    }
+  }
+  return model;
+}
+
+/**
+ * Resolve a client-supplied model id to the canonical Zen wire id:
+ *   1. strips any "opencode/" provider prefix
+ *   2. strips "-responses" / "@responses" / "/responses" suffixes
+ *   3. maps short aliases to their canonical "-free" ids
+ *
+ * Unknown ids pass through unchanged so Zen can apply its own routing.
+ */
+function resolveZenModel(model) {
   if (typeof model !== 'string') return model;
-  return model.startsWith('opencode/') ? model.slice('opencode/'.length) : model;
+  let m = stripResponsesSuffix(model.trim());
+  if (m.toLowerCase().startsWith('opencode/')) {
+    m = m.slice('opencode/'.length);
+  }
+  return ZEN_MODEL_ALIASES[m.toLowerCase()] || m;
 }
 
 /**
@@ -155,6 +210,33 @@ function stripProviderPrefix(model) {
  *   "unknown variant, expected one of `high`, `low`, `medium`, `max`, `xhigh`".
  */
 const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'max', 'xhigh'];
+
+/**
+ * Determines if an error/status indicates a network failure or upstream gateway error
+ * that might be bypassed by using the WARP proxy.
+ */
+function isFailoverEligible(err, statusCode, responseBody) {
+  // Network errors
+  if (err && (err.code === 'upstream_connection_error' || err.code === 'upstream_timeout' || err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET' || err.code === 'ENOTFOUND')) {
+    return true;
+  }
+  
+  // Gateway HTTP errors
+  if (statusCode === 429 || statusCode === 502 || statusCode === 503 || statusCode === 504) {
+    return true;
+  }
+  
+  // Check for 500 internal server error with specific messages from upstream (Cloudflare/DeepSeek gateway)
+  if (statusCode === 500 && responseBody) {
+    const bodyStr = typeof responseBody === 'string' ? responseBody.toLowerCase() : JSON.stringify(responseBody).toLowerCase();
+    return bodyStr.includes('internal server error') || 
+           bodyStr.includes('internal_server_error') ||
+           bodyStr.includes('upstream error') ||
+           bodyStr.includes('upstream_error');
+  }
+  
+  return false;
+}
 
 /**
  * Normalize a client-supplied reasoning_effort value into one the gateway
@@ -170,14 +252,109 @@ function resolveReasoningEffort(clientValue) {
 }
 
 /**
+ * Build the temporal-context line telling the model the real present date.
+ * Mirrors the upstream adapter so the model does not assume it is stuck in
+ * its training cutoff (2023-2024).
+ */
+function temporalContextLine() {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+  return (
+    `Temporal context: today is ${dateStr}. The current year is ${now.getFullYear()}. ` +
+    'Treat this as ground truth for "today", "this year", recency, and time-sensitive ' +
+    'answers — do not assume you are stuck in 2023–2024.'
+  );
+}
+
+/**
+ * Prepend/merge the current date/year into a system message so the model knows
+ * the present (e.g. 2026). No-op when disabled via INJECT_TEMPORAL_CONTEXT=false
+ * or when the conversation already carries a Temporal context marker.
+ */
+function ensureTemporalContext(messages) {
+  if (!config.injectTemporalContext || !Array.isArray(messages)) return messages;
+  const line = temporalContextLine();
+  if (messages.length > 0 && messages[0] && messages[0].role === 'system') {
+    if (typeof messages[0].content === 'string' && !messages[0].content.includes('Temporal context:')) {
+      return messages.map((m, i) => (i === 0 ? { ...m, content: `${line}\n\n${m.content}` } : m));
+    }
+    return messages;
+  }
+  return [{ role: 'system', content: line }, ...messages];
+}
+
+/**
+ * Normalize a client chat-completion payload before it goes on the wire.
+ *
+ * Pure function (no I/O) so the transformation is unit-testable. It:
+ *   - resolves the model id (strips "opencode/" prefix, "-responses" suffixes
+ *     and maps short aliases like "mimo-v2.5" -> "mimo-v2.5-free")
+ *   - adds a reasoning_content fallback to assistant messages that lost it
+ *   - injects the current date/year as temporal context (config-gated)
+ *   - injects the default reasoning_effort when the client did not send a
+ *     valid one
+ *   - forces stream_options.include_usage on SSE streams so usage is reported
+ *
+ * @param {object} payload - raw OpenAI chat completion request body
+ * @returns {object} normalized payload
+ */
+function normalizeChatPayload(payload) {
+  const normalized = { ...payload };
+  if (normalized.model) {
+    normalized.model = resolveZenModel(normalized.model);
+  }
+
+  // Sanitize messages: ensure assistant messages in history that lost reasoning_content
+  // get a fallback so OpenCode Zen / DeepSeek upstream does not reject with 400
+  if (Array.isArray(normalized.messages)) {
+    normalized.messages = normalized.messages.map((msg) => {
+      if (msg && msg.role === 'assistant' && !msg.reasoning_content) {
+        return {
+          ...msg,
+          reasoning_content: msg.content || 'Thought process completed.',
+        };
+      }
+      return msg;
+    });
+  }
+
+  // Inject current date/year so the model knows the present (e.g. 2026) instead
+  // of assuming its training cutoff. Mirrors the upstream adapter.
+  normalized.messages = ensureTemporalContext(normalized.messages);
+
+  // Inject default reasoning effort when the client did not request a valid
+  // one. The field is forwarded as-is; Zen/DeepSeek only honors it on
+  // reasoning-capable models and ignores it elsewhere.
+  normalized.reasoning_effort = resolveReasoningEffort(normalized.reasoning_effort);
+
+  // Ensure usage is reported on SSE streams — without stream_options many
+  // providers omit usage in streamed responses. Respect a client-specified value.
+  if (normalized.stream === true) {
+    if (normalized.stream_options === null || normalized.stream_options === undefined) {
+      normalized.stream_options = { include_usage: true };
+    } else if (normalized.stream_options.include_usage === undefined) {
+      normalized.stream_options = { ...normalized.stream_options, include_usage: true };
+    }
+  }
+
+  return normalized;
+}
+
+/**
  * Forward a chat completion request to the Zen API.
  *
  * The payload is passed through unchanged except for:
- *   - the model id (strips the "opencode/" prefix)
+ *   - the model id (strips the "opencode/" prefix and maps short aliases)
  *   - reasoning_effort, which defaults to the configured maximum ("xhigh")
  *     when the client does not specify a valid value, so reasoning models
  *     always think at full depth. Clients can override per-request with any
  *     of: low | medium | high | max | xhigh.
+ *   - a temporal-context system message with the current date/year
+ *   - stream_options.include_usage on SSE streams
  *
  * tools, tool_choice, response_format, temperature, top_p, seed, stream,
  * max_tokens, etc. all reach the upstream model intact, preserving native
@@ -187,21 +364,25 @@ function resolveReasoningEffort(clientValue) {
  * @returns {Promise<object>} Zen response ({stream, response|data, statusCode})
  */
 async function forwardChatCompletion(payload) {
-  const normalized = { ...payload };
-  if (normalized.model) {
-    normalized.model = stripProviderPrefix(normalized.model);
-  }
-
-  // Inject default reasoning effort when the client did not request a valid
-  // one. The field is forwarded as-is; Zen/DeepSeek only honors it on
-  // reasoning-capable models and ignores it elsewhere.
-  normalized.reasoning_effort = resolveReasoningEffort(normalized.reasoning_effort);
-
+  const normalized = normalizeChatPayload(payload);
   const headers = { Authorization: getAuthHeader() };
   const isStream = normalized.stream === true;
   const body = JSON.stringify(normalized);
 
-  return requestZenApi('POST', '/chat/completions', headers, body, isStream);
+  try {
+    return await requestZenApi('POST', '/chat/completions', headers, body, isStream, false);
+  } catch (err) {
+    if (config.warpAutoFailover && isFailoverEligible(err, err.statusCode, err.message)) {
+      console.warn(`[WARP Failover] Upstream failure detected (${err.statusCode || err.code}). Retrying via WARP SOCKS proxy...`);
+      try {
+        return await requestZenApi('POST', '/chat/completions', headers, body, isStream, true);
+      } catch (warpErr) {
+        console.error(`[WARP Failover] Request also failed via WARP: ${warpErr.message}`);
+        throw warpErr;
+      }
+    }
+    throw err;
+  }
 }
 
 /**
@@ -209,14 +390,26 @@ async function forwardChatCompletion(payload) {
  */
 async function fetchModels() {
   const headers = { Authorization: getAuthHeader() };
-  return requestZenApi('GET', '/models', headers, null, false);
+  try {
+    return await requestZenApi('GET', '/models', headers, null, false, false);
+  } catch (err) {
+    if (config.warpAutoFailover && isFailoverEligible(err, err.statusCode, err.message)) {
+      console.warn(`[WARP Failover] Upstream models fetch failed (${err.statusCode || err.code}). Retrying via WARP SOCKS proxy...`);
+      return requestZenApi('GET', '/models', headers, null, false, true);
+    }
+    throw err;
+  }
 }
 
 module.exports = {
   forwardChatCompletion,
   fetchModels,
   normalizeZenError,
-  stripProviderPrefix,
+  normalizeChatPayload,
+  resolveZenModel,
+  stripResponsesSuffix,
+  ZEN_MODEL_ALIASES,
   resolveReasoningEffort,
+  ensureTemporalContext,
   VALID_REASONING_EFFORTS,
 };

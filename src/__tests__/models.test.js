@@ -21,6 +21,15 @@ describe('Models Configuration', () => {
       expect(model.supportsStreaming).toBe(true);
     });
 
+    it('should include ling-3.0-flash-free and laguna-s-2.1-free', () => {
+      expect(FREE_MODELS.find((m) => m.id === 'opencode/ling-3.0-flash-free')).toBeDefined();
+      expect(FREE_MODELS.find((m) => m.id === 'opencode/laguna-s-2.1-free')).toBeDefined();
+    });
+
+    it('should mirror the upstream adapter free catalog (7 models)', () => {
+      expect(FREE_MODELS).toHaveLength(7);
+    });
+
     it('should have unique model IDs', () => {
       const ids = FREE_MODELS.map((m) => m.id);
       const uniqueIds = new Set(ids);
@@ -66,6 +75,12 @@ describe('Models Configuration', () => {
     it('should resolve IDs without -free suffix', () => {
       const result = resolveModelId('deepseek-v4-flash');
       expect(result).toBe('opencode/deepseek-v4-flash-free');
+    });
+
+    it('should resolve short aliases for the new free models', () => {
+      expect(resolveModelId('ling-3.0-flash')).toBe('opencode/ling-3.0-flash-free');
+      expect(resolveModelId('laguna-s-2.1')).toBe('opencode/laguna-s-2.1-free');
+      expect(resolveModelId('ling-3.0-flash-free')).toBe('opencode/ling-3.0-flash-free');
     });
 
     it('should return original ID for unknown models', () => {

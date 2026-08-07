@@ -27,6 +27,16 @@ const config = {
   // "xhigh" maximizes chain-of-thought length. Set via env to override.
   defaultReasoningEffort: process.env.DEFAULT_REASONING_EFFORT || 'xhigh',
 
+  // When true, a system message with the current date/year is injected into
+  // every request so the model knows the present and does not assume its
+  // training cutoff (2023-2024). Set INJECT_TEMPORAL_CONTEXT=false to disable.
+  injectTemporalContext: process.env.INJECT_TEMPORAL_CONTEXT !== 'false',
+
+  // Warp SOCKS Failover config
+  warpAutoFailover: process.env.WARP_AUTO_FAILOVER !== 'false',
+  warpSocksHost: process.env.WARP_SOCKS_HOST || '127.0.0.1',
+  warpSocksPort: parseInt(process.env.WARP_SOCKS_PORT, 10) || 40000,
+
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',
 };

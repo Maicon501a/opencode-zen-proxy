@@ -61,6 +61,26 @@ const FREE_MODELS = [
     supportsStreaming: true,
     supportsTools: true,
   },
+  {
+    id: 'opencode/ling-3.0-flash-free',
+    name: 'Ling 3.0 Flash Free',
+    provider: 'ling',
+    family: 'ling-3.0',
+    free: true,
+    description: 'Flash-fast model from Ling, free tier.',
+    supportsStreaming: true,
+    supportsTools: true,
+  },
+  {
+    id: 'opencode/laguna-s-2.1-free',
+    name: 'Laguna S 2.1 Free',
+    provider: 'laguna',
+    family: 'laguna-s-2.1',
+    free: true,
+    description: 'Laguna S 2.1 model, free tier.',
+    supportsStreaming: true,
+    supportsTools: true,
+  },
 ];
 
 const ALL_MODELS = [...FREE_MODELS];

@@ -48,7 +48,11 @@ Com isso, o proxy:
 - ✅ **Tool calling nativo (function calling)** — `tools`, `tool_choice` e streaming de `tool_calls` passam intactos (o que agentes como Kilo Code / Cline precisam)
 - ✅ **Streaming SSE** — Suporte completo a streaming, incluindo o `reasoning_content` estilo DeepSeek (chain-of-thought)
 - ✅ **Drop-in compatível** — Qualquer cliente OpenAI funciona apenas mudando a `baseURL`
-- ✅ **Aliases de modelo** — `deepseek-v4-flash-free` ou `opencode/deepseek-v4-flash-free` ambos funcionam
+- ✅ **Aliases de modelo** — `deepseek-v4-flash`, `mimo-v2.5` ou `opencode/deepseek-v4-flash-free` — todos funcionam e são resolvidos para o ID canônico no wire
+- ✅ **Failover WARP** — em falhas de rede/gateway (429, 502, 503, 504 e 500 de gateway), a requisição é automaticamente repetida via proxy SOCKS5 local (WARP)
+- ✅ **Contexto temporal** — injeta a data/ano atual num system message, para o modelo saber o presente em vez de assumir o corte de treino (2023–2024)
+- ✅ **Uso em streaming** — força `stream_options.include_usage` em streams SSE para o `usage` sempre vir na resposta
+- ✅ **Compatível com Codex/Responses** — sufixos `-responses`, `@responses` e `/responses` nos IDs de modelo são removidos automaticamente
 - ✅ **Leve** — Um único processo Node, apenas o Express como dependência
 
 ---
@@ -60,10 +64,11 @@ O gateway OpenCode Zen já é uma API OpenAI-compatível completa. Seus modelos 
 Este proxy reproduz esse comportamento sem exigir o binário do opencode, login ou uma instância local `opencode serve`. Ele simplesmente:
 
 1. Encaminha a requisição para o Zen com `Authorization: Bearer public`
-2. Remove o prefixo opcional `opencode/` do ID do modelo
-3. Passa todo o resto (mensagens, tools, streaming) **exatamente como recebido**
+2. Resolve o ID do modelo: remove o prefixo `opencode/`, remove sufixos `-responses`/`@responses`/`/responses` e mapeia aliases curtos para o ID canônico (`mimo-v2.5` → `mimo-v2.5-free`)
+3. Injeta um system message com a **data/ano atual** e aplica o `reasoning_effort` padrão (e `include_usage` em streams)
+4. Passa todo o resto (mensagens, tools, streaming) **exatamente como recebido**
 
-Como o corpo da requisição é repassado sem alterações, o **function calling nativo funciona de ponta a ponta** — agentes recebem deltas reais de `tool_calls` em vez de texto puro.
+Como o corpo da requisição é repassado sem alterações, o **function calling nativo funciona de ponta a ponta** — agentes recebem deltas reais de `tool_calls` em vez de texto puro. Em caso de falha de rede/gateway, o proxy re-tenta automaticamente via SOCKS5 (WARP).
 
 ### Arquitetura
 
@@ -239,6 +244,8 @@ curl http://localhost:3000/v1/chat/completions \
   }'
 ```
 
+> O proxy força `stream_options.include_usage: true` em streams SSE (a menos que o cliente especifique outro valor), garantindo que o objeto `usage` venha no último chunk.
+
 ### 5. Listar Modelos Disponíveis
 
 ```bash
@@ -317,8 +324,24 @@ Os modelos do tier gratuito, acessíveis com o token `public`:
 | `opencode/mimo-v2.5-free`       | MiMo V2.5 Free         |  ✅   |    —      |
 | `opencode/nemotron-3-ultra-free`| Nemotron 3 Ultra Free  |  ✅   |    —      |
 | `opencode/north-mini-code-free` | North Mini Code        |  ✅   |    —      |
+| `opencode/ling-3.0-flash-free`  | Ling 3.0 Flash Free    |  ✅   |    —      |
+| `opencode/laguna-s-2.1-free`    | Laguna S 2.1 Free      |  ✅   |    —      |
 
-Você pode usar **aliases curtos** omitindo o prefixo `opencode/` (ex: `deepseek-v4-flash-free`).
+### Resolução de modelos (aliases)
+
+O proxy resolve qualquer um destes formatos para o ID canônico antes de enviar ao Zen:
+
+| Cliente envia                        | Wire (vai ao Zen)            |
+|--------------------------------------|------------------------------|
+| `opencode/deepseek-v4-flash-free`    | `deepseek-v4-flash-free`     |
+| `deepseek-v4-flash-free`             | `deepseek-v4-flash-free`     |
+| `deepseek-v4-flash`                  | `deepseek-v4-flash-free`     |
+| `mimo-v2.5`                          | `mimo-v2.5-free`             |
+| `nemotron-3-ultra`                   | `nemotron-3-ultra-free`      |
+| `north-mini-code`                    | `north-mini-code-free`       |
+| `ling-3.0-flash`                     | `ling-3.0-flash-free`        |
+| `laguna-s-2.1`                       | `laguna-s-2.1-free`          |
+| `opencode/deepseek-v4-flash-free-responses` | `deepseek-v4-flash-free` (sufixo `-responses` removido) |
 
 > O conjunto exato de modelos depende do que o Zen expõe no momento. Rode `curl http://localhost:3000/v1/models` para ver a lista atualizada (vinda direto do Zen — atualmente 50 modelos).
 
@@ -338,6 +361,10 @@ Todas as configurações são feitas via variáveis de ambiente (arquivo `.env` 
 | `ZEN_API_KEY` / `OPENCODE_API_KEY` | `public`                  | Token bearer enviado ao Zen. `public` libera os modelos gratuitos; defina uma chave real para acessar também modelos pagos |
 | `CLIENT_API_KEY`             | _(vazio)_                       | Se definido, os clientes devem enviar esta chave. Quando vazio, o proxy fica aberto (uso local) |
 | `DEFAULT_REASONING_EFFORT`   | `xhigh`                         | Esforço de raciocínio padrão para modelos reasoning: `low`, `medium`, `high`, `max` ou `xhigh` |
+| `INJECT_TEMPORAL_CONTEXT`    | `true`                          | Injeta um system message com a data/ano atual em cada requisição. Defina `false` para desativar |
+| `WARP_AUTO_FAILOVER`         | `true`                          | Re-tenta requisições que falham por rede/gateway via proxy SOCKS5 (WARP) |
+| `WARP_SOCKS_HOST`            | `127.0.0.1`                     | Host do proxy SOCKS5 usado no failover WARP |
+| `WARP_SOCKS_PORT`            | `40000`                         | Porta do proxy SOCKS5 usado no failover WARP |
 | `LOG_LEVEL`                  | `info`                          | Nível de log: debug, info, warn, error |
 
 ### Exemplo de `.env`

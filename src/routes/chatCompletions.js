@@ -2,6 +2,7 @@
 
 const express = require('express');
 const zen = require('../services/zenClient');
+const { validateChatPayload } = require('../services/validation');
 
 const router = express.Router();
 
@@ -24,30 +25,9 @@ router.post('/chat/completions', async (req, res, next) => {
   try {
     const payload = req.body;
 
-    if (!payload || typeof payload !== 'object') {
-      return res.status(400).json({
-        error: { message: 'Request body must be a JSON object.', type: 'invalid_request_error' },
-      });
-    }
-    if (!payload.model) {
-      return res.status(400).json({
-        error: {
-          message: 'The model field is required.',
-          type: 'invalid_request_error',
-          param: 'model',
-          code: 'missing_required_parameter',
-        },
-      });
-    }
-    if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
-      return res.status(400).json({
-        error: {
-          message: 'The messages field is required and must be a non-empty array.',
-          type: 'invalid_request_error',
-          param: 'messages',
-          code: 'missing_required_parameter',
-        },
-      });
+    const validationError = validateChatPayload(payload);
+    if (validationError) {
+      return res.status(validationError.status).json({ error: validationError.error });
     }
 
     const result = await zen.forwardChatCompletion(payload);

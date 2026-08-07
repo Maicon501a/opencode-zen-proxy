@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { FREE_MODELS } = require('../config/models');
 
 const router = express.Router();
 
@@ -67,15 +68,9 @@ router.get('/docs', (_req, res) => {
         },
       },
     },
-    'Model Aliases': 'You can omit the "opencode/" prefix. E.g., "deepseek-v4-flash-free" works.',
+    'Model Aliases': 'You can omit the "opencode/" prefix and use short aliases (e.g. "mimo-v2.5" -> "mimo-v2.5-free").',
     authentication: 'Keyless. The proxy forwards "public" to Zen for free-tier models. Set CLIENT_API_KEY to gate client access.',
-    'Free Models': [
-      'opencode/deepseek-v4-flash-free',
-      'opencode/big-pickle',
-      'opencode/mimo-v2.5-free',
-      'opencode/nemotron-3-ultra-free',
-      'opencode/north-mini-code-free',
-    ],
+    'Free Models': FREE_MODELS.map((m) => m.id),
   });
 });
 
