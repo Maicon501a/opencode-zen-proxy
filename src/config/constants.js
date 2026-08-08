@@ -57,6 +57,9 @@ const config = {
     parseInt(process.env.WARP_COOLDOWN_MS, 10) ||
     parseInt(process.env.WARP_COOLDOWN, 10) ||
     60000,
+  // Send the global --accept-tos flag on every warp-cli command. Required in
+  // headless/container environments where the acceptance is not persisted.
+  warpAcceptTos: process.env.WARP_ACCEPT_TOS !== 'false',
 
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',

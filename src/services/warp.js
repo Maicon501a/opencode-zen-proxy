@@ -50,6 +50,10 @@ class WarpManager {
     this.commandTimeout = cfg.commandTimeout || 30000;
     this.startupWait = cfg.startupWait === undefined ? 1500 : cfg.startupWait;
     this.cooldown = cfg.cooldown === undefined ? 60000 : cfg.cooldown;
+    // Cloudflare WARP demands the global --accept-tos flag on every command in
+    // headless/container environments (the acceptance is not persisted).
+    // Harmless when the ToS is already accepted on a desktop install.
+    this.acceptTos = cfg.acceptTos !== false;
     this.active = false;
     this.activating = false;
     this.wait = null;
@@ -134,10 +138,12 @@ class WarpManager {
   /**
    * Run a single warp-cli command with the configured timeout. Rejects with a
    * descriptive message that includes the command and any stderr/stdout.
+   * The global --accept-tos flag is prepended when enabled.
    */
   runCLI(...args) {
+    const fullArgs = this.acceptTos ? ['--accept-tos', ...args] : args;
     return new Promise((resolve, reject) => {
-      execFile(this.binary, args, { timeout: this.commandTimeout }, (err, stdout, stderr) => {
+      execFile(this.binary, fullArgs, { timeout: this.commandTimeout }, (err, stdout, stderr) => {
         if (err) {
           const detail = String(stdout || stderr || '').trim();
           const msg = detail || err.message;
@@ -153,6 +159,7 @@ class WarpManager {
       enabled: this.enabled(),
       active: this.active,
       activating: this.activating,
+      accept_tos: this.acceptTos,
       socks: `${this.cfg.host}:${this.cfg.port}`,
       binary: this.binary,
       cooldown_ms: this.cooldown,
@@ -171,6 +178,7 @@ const warp = new WarpManager({
   commandTimeout: config.warpCommandTimeout,
   startupWait: config.warpStartupWait,
   cooldown: config.warpCooldown,
+  acceptTos: config.warpAcceptTos,
 });
 
 module.exports = warp;

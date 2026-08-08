@@ -3,8 +3,21 @@ services:
     build:
       context: .
     container_name: opencode-zen-proxy
-    ports:
-      - "3000:3000"
+    # WARP needs full host network access (WireGuard tunnel + SOCKS on the
+    # host loopback). With host networking there is no port mapping — the
+    # proxy binds 0.0.0.0:3000 directly on the host.
+    network_mode: host
+    # warp-svc creates the tun interface (NET_ADMIN) and /dev/net/tun.
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
     env_file:
       - .env
+    # Persist WARP registration/settings across restarts.
+    volumes:
+      - warp-state:/var/lib/cloudflare-warp
     restart: unless-stopped
+
+volumes:
+  warp-state:

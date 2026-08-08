@@ -25,7 +25,8 @@ function mockCli(success = true, statusOutput = 'Status: Connected') {
     if (!success) {
       return cb(new Error('exit 1'), '', 'boom');
     }
-    if (args[0] === 'status') cb(null, statusOutput, '');
+    // args = ['--accept-tos', <subcommand>, ...] or [<subcommand>, ...]
+    if (args.includes('status')) cb(null, statusOutput, '');
     else cb(null, 'ok\n', '');
   });
 }
@@ -42,13 +43,23 @@ describe('WarpManager', () => {
 
     const calls = execFile.mock.calls.map((c) => c[0] + ' ' + c[1].join(' '));
     expect(calls).toEqual([
-      'warp-cli proxy port 40000',
-      'warp-cli mode proxy',
-      'warp-cli connect',
-      'warp-cli status',
+      'warp-cli --accept-tos proxy port 40000',
+      'warp-cli --accept-tos mode proxy',
+      'warp-cli --accept-tos connect',
+      'warp-cli --accept-tos status',
     ]);
     expect(m.isActive()).toBe(true);
     expect(m.status().activated_at).toBeTruthy();
+    expect(m.status().accept_tos).toBe(true);
+  });
+
+  it('should omit --accept-tos when disabled via config', async () => {
+    mockCli(true);
+    const m = makeManager({ acceptTos: false });
+    await m.activate();
+    const calls = execFile.mock.calls.map((c) => c[1].join(' '));
+    expect(calls[0]).toBe('proxy port 40000');
+    expect(m.status().accept_tos).toBe(false);
   });
 
   it('should reject when warp-cli status is not Connected', async () => {
@@ -78,7 +89,7 @@ describe('WarpManager', () => {
     expect(a).toBeUndefined();
     expect(b).toBeUndefined();
     // connect/status only once each
-    const statusCalls = execFile.mock.calls.filter((c) => c[1][0] === 'status');
+    const statusCalls = execFile.mock.calls.filter((c) => c[1][1] === 'status');
     expect(statusCalls).toHaveLength(1);
   });
 

@@ -390,12 +390,27 @@ LOG_LEVEL=info
 Para rodar em container:
 
 ```bash
-# Construir a imagem
+# Construir a imagem (inclui o cliente Cloudflare WARP)
 docker build -t opencode-zen-proxy .
 
-# Rodar o container
-docker run -p 3000:3000 opencode-zen-proxy
+# Rodar o container (WARP exige host network, NET_ADMIN e /dev/net/tun)
+docker run -d --name opencode-zen-proxy \
+  --network host \
+  --cap-add NET_ADMIN \
+  --device /dev/net/tun:/dev/net/tun \
+  -v opencode-zen-proxy-warp:/var/lib/cloudflare-warp \
+  --env-file .env \
+  --restart unless-stopped \
+  opencode-zen-proxy
 ```
+
+> **WARP:** a imagem já traz o `cloudflare-warp` e o entrypoint sobe o daemon
+> `warp-svc` + registra o dispositivo. O proxy ativa o túnel **sob demanda** em
+> falhas elegíveis (rede, 429/502/503/504, 500 de gateway), verificando
+> `Status: Connected` antes de re-tentar via SOCKS5 (`127.0.0.1:40000`).
+> O estado de registro persiste no volume `warp-state`.
+> Use `docker compose up -d --force-recreate` para aplicar o `docker-compose.yml`
+> (já configurado com `network_mode: host`, `NET_ADMIN` e `/dev/net/tun`).
 
 ---
 
