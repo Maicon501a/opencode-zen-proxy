@@ -364,9 +364,13 @@ Todas as configurações são feitas via variáveis de ambiente (arquivo `.env` 
 | `DEFAULT_REASONING_EFFORT`   | `xhigh`                         | Esforço de raciocínio padrão para modelos reasoning: `low`, `medium`, `high`, `max` ou `xhigh` |
 | `INJECT_TEMPORAL_CONTEXT`    | `true`                          | Injeta um system message com a data/ano atual em cada requisição. Defina `false` para desativar |
 | `AUTO_ROUTE_MULTIMODAL`      | `false`                         | Se `true`, requisições com imagens/áudio direcionadas a um modelo só-texto são roteadas automaticamente para `mimo-v2.5-free` (multimodal). Se `false`, retorna erro 400 claro |
-| `WARP_AUTO_FAILOVER`         | `true`                          | Re-tenta requisições que falham por rede/gateway via proxy SOCKS5 (WARP) |
+| `WARP_AUTO_FAILOVER`         | `true`                          | Em falhas elegíveis (rede, 429/502/503/504, 500 de gateway), o proxy **ativa o WARP sob demanda** via `warp-cli` e re-tenta pelo proxy SOCKS5 local |
 | `WARP_SOCKS_HOST`            | `127.0.0.1`                     | Host do proxy SOCKS5 usado no failover WARP |
 | `WARP_SOCKS_PORT`            | `40000`                         | Porta do proxy SOCKS5 usado no failover WARP |
+| `WARP_BIN_PATH`              | _(vazio)_                       | Caminho do binário `warp-cli` (vazio = do PATH; no Windows é auto-detectado em Program Files) |
+| `WARP_COMMAND_TIMEOUT`       | `30000`                         | Timeout (ms) de cada comando `warp-cli` |
+| `WARP_STARTUP_WAIT`          | `1500`                          | Espera (ms) após `warp-cli connect` antes de verificar o status |
+| `WARP_COOLDOWN`              | `60000`                         | Cooldown (ms) após falha de ativação para evitar tempestade de `warp-cli` |
 | `LOG_LEVEL`                  | `info`                          | Nível de log: debug, info, warn, error |
 
 ### Exemplo de `.env`

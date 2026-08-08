@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { FREE_MODELS } = require('../config/models');
+const warp = require('../services/warp');
 
 const router = express.Router();
 
@@ -17,6 +18,7 @@ router.get('/health', (_req, res) => {
     version: '1.0.0',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    warp: warp.status(),
   });
 });
 

@@ -37,10 +37,26 @@ const config = {
   // instead of being rejected with 400.
   autoRouteMultimodal: process.env.AUTO_ROUTE_MULTIMODAL === 'true',
 
-  // Warp SOCKS Failover config
+  // Warp SOCKS Failover config. Mirrors the grok-kimi-proxy-route WARP manager:
+  // on a failover-eligible error the proxy ACTIVATES WARP on demand via
+  // warp-cli (proxy port -> mode proxy -> connect -> verify Connected) and
+  // retries the request through the local SOCKS5 endpoint.
   warpAutoFailover: process.env.WARP_AUTO_FAILOVER !== 'false',
   warpSocksHost: process.env.WARP_SOCKS_HOST || '127.0.0.1',
   warpSocksPort: parseInt(process.env.WARP_SOCKS_PORT, 10) || 40000,
+  // Path to the warp-cli binary. Auto-detected from Program Files on Windows;
+  // otherwise resolved from PATH. Empty means "warp-cli" from PATH.
+  warpBinPath: process.env.WARP_BIN_PATH || '',
+  // Per warp-cli command timeout in ms (Go default: 30s).
+  warpCommandTimeout: parseInt(process.env.WARP_COMMAND_TIMEOUT, 10) || 30000,
+  // Wait after `warp-cli connect` before checking status, in ms (Go: 1500ms).
+  warpStartupWait: parseInt(process.env.WARP_STARTUP_WAIT, 10) || 1500,
+  // Cooldown after a failed activation, in ms, so a burst of 500s cannot
+  // spawn a storm of warp-cli processes (Go default: 1min).
+  warpCooldown:
+    parseInt(process.env.WARP_COOLDOWN_MS, 10) ||
+    parseInt(process.env.WARP_COOLDOWN, 10) ||
+    60000,
 
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',

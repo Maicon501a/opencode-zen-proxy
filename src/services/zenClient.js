@@ -6,6 +6,7 @@ const { URL } = require('url');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const { config } = require('../config/constants');
 const { ALL_MODELS } = require('../config/models');
+const warp = require('./warp');
 
 /**
  * OpenCode Zen API client (direct mode).
@@ -252,6 +253,67 @@ function resolveReasoningEffort(clientValue) {
 }
 
 /**
+ * Determines if an error is a pure network/transport failure (no HTTP status
+ * involved). Used to detect a stale WARP tunnel: if a WARP-routed request dies
+ * at the transport level the cached Connected state is invalidated.
+ */
+function isNetworkFailure(err) {
+  if (!err) return false;
+  const code = String(err.code || '');
+  return [
+    'upstream_connection_error',
+    'upstream_timeout',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'ECONNABORTED',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+  ].includes(code);
+}
+
+/**
+ * Execute an upstream request function with WARP failover, mirroring the
+ * grok-kimi-proxy-route flow:
+ *
+ *   1. If WARP is already active, route through it.
+ *   2. If that WARP-routed request dies with a network error, invalidate the
+ *      stale state and retry once on the default route.
+ *   3. If a direct request fails with a failover-eligible error, ACTIVATE
+ *      WARP on demand (warp-cli) and retry through the SOCKS endpoint.
+ *   4. If activation fails, the original error is propagated.
+ *
+ * @param {(viaWarp: boolean) => Promise<object>} requestFn
+ * @returns {Promise<object>} the upstream result
+ */
+async function requestWithWarpFailover(requestFn) {
+  const viaWarp = warp.isActive();
+  try {
+    return await requestFn(viaWarp);
+  } catch (err) {
+    if (viaWarp && warp.enabled() && isNetworkFailure(err)) {
+      // Stale WARP state: invalidate and retry on the default route.
+      warp.markInactive(err.message);
+      console.warn(`[WARP Failover] Stale WARP state; retrying direct: ${err.message}`);
+      return requestFn(false);
+    }
+    if (!viaWarp && warp.enabled() && isFailoverEligible(err, err.statusCode, err.message)) {
+      console.warn(`[WARP Failover] Upstream failure (${err.statusCode || err.code}). Activating WARP...`);
+      try {
+        await warp.activate();
+      } catch (activateErr) {
+        console.error(`[WARP Failover] WARP activation failed: ${activateErr.message}`);
+        throw err;
+      }
+      // Recurse so the retry itself can handle a stale/again-failing tunnel.
+      return requestWithWarpFailover(requestFn);
+    }
+    throw err;
+  }
+}
+
+/**
  * Build the temporal-context line telling the model the real present date.
  * Mirrors the upstream adapter so the model does not assume it is stuck in
  * its training cutoff (2023-2024).
@@ -369,20 +431,9 @@ async function forwardChatCompletion(payload) {
   const isStream = normalized.stream === true;
   const body = JSON.stringify(normalized);
 
-  try {
-    return await requestZenApi('POST', '/chat/completions', headers, body, isStream, false);
-  } catch (err) {
-    if (config.warpAutoFailover && isFailoverEligible(err, err.statusCode, err.message)) {
-      console.warn(`[WARP Failover] Upstream failure detected (${err.statusCode || err.code}). Retrying via WARP SOCKS proxy...`);
-      try {
-        return await requestZenApi('POST', '/chat/completions', headers, body, isStream, true);
-      } catch (warpErr) {
-        console.error(`[WARP Failover] Request also failed via WARP: ${warpErr.message}`);
-        throw warpErr;
-      }
-    }
-    throw err;
-  }
+  return requestWithWarpFailover((viaWarp) =>
+    requestZenApi('POST', '/chat/completions', headers, body, isStream, viaWarp)
+  );
 }
 
 /**
@@ -390,15 +441,9 @@ async function forwardChatCompletion(payload) {
  */
 async function fetchModels() {
   const headers = { Authorization: getAuthHeader() };
-  try {
-    return await requestZenApi('GET', '/models', headers, null, false, false);
-  } catch (err) {
-    if (config.warpAutoFailover && isFailoverEligible(err, err.statusCode, err.message)) {
-      console.warn(`[WARP Failover] Upstream models fetch failed (${err.statusCode || err.code}). Retrying via WARP SOCKS proxy...`);
-      return requestZenApi('GET', '/models', headers, null, false, true);
-    }
-    throw err;
-  }
+  return requestWithWarpFailover((viaWarp) =>
+    requestZenApi('GET', '/models', headers, null, false, viaWarp)
+  );
 }
 
 module.exports = {
@@ -411,5 +456,8 @@ module.exports = {
   ZEN_MODEL_ALIASES,
   resolveReasoningEffort,
   ensureTemporalContext,
+  isFailoverEligible,
+  isNetworkFailure,
+  requestWithWarpFailover,
   VALID_REASONING_EFFORTS,
 };

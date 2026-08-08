@@ -5,6 +5,7 @@
 const { createApp } = require('./server');
 const { config } = require('./config/constants');
 const { FREE_MODELS } = require('./config/models');
+const warp = require('./services/warp');
 
 const app = createApp();
 
@@ -28,7 +29,8 @@ const server = app.listen(config.port, config.host, () => {
   Upstream key:      ${config.zenApiKey === 'public' ? '"public" (free-tier models)' : '(configured)'}
   Free models:       ${FREE_MODELS.length} models (use with or without "opencode/" prefix)
   Temporal context:  ${config.injectTemporalContext ? 'on (injects current date)' : 'off'}
-  WARP failover:     ${config.warpAutoFailover ? `on (socks5://${config.warpSocksHost}:${config.warpSocksPort})` : 'off'}
+  WARP failover:     ${config.warpAutoFailover ? `on (socks5://${config.warpSocksHost}:${config.warpSocksPort}, auto-activates warp-cli on failure)` : 'off'}
+  WARP status:       ${warp.status().active ? 'active (tunnel up)' : 'idle (activated on demand)'}
 
   Examples:
     curl http://${config.host}:${config.port}/v1/chat/completions \\
