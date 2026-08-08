@@ -220,21 +220,21 @@ function isFailoverEligible(err, statusCode, responseBody) {
   if (err && (err.code === 'upstream_connection_error' || err.code === 'upstream_timeout' || err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET' || err.code === 'ENOTFOUND')) {
     return true;
   }
-  
+
   // Gateway HTTP errors
   if (statusCode === 429 || statusCode === 502 || statusCode === 503 || statusCode === 504) {
     return true;
   }
-  
+
   // Check for 500 internal server error with specific messages from upstream (Cloudflare/DeepSeek gateway)
   if (statusCode === 500 && responseBody) {
     const bodyStr = typeof responseBody === 'string' ? responseBody.toLowerCase() : JSON.stringify(responseBody).toLowerCase();
-    return bodyStr.includes('internal server error') || 
-           bodyStr.includes('internal_server_error') ||
-           bodyStr.includes('upstream error') ||
-           bodyStr.includes('upstream_error');
+    return bodyStr.includes('internal server error') ||
+      bodyStr.includes('internal_server_error') ||
+      bodyStr.includes('upstream error') ||
+      bodyStr.includes('upstream_error');
   }
-  
+
   return false;
 }
 

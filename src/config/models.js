@@ -37,9 +37,10 @@ const FREE_MODELS = [
     provider: 'mimo',
     family: 'mimo-v2.5',
     free: true,
-    description: 'Latest MiMo V2.5 model, free tier.',
+    description: 'Latest MiMo V2.5 model, free tier. Multimodal (accepts images).',
     supportsStreaming: true,
     supportsTools: true,
+    multimodal: true,
   },
   {
     id: 'opencode/nemotron-3-ultra-free',

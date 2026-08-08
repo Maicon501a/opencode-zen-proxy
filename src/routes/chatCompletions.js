@@ -2,7 +2,9 @@
 
 const express = require('express');
 const zen = require('../services/zenClient');
-const { validateChatPayload } = require('../services/validation');
+const { config } = require('../config/constants');
+const { getModelInfo, FREE_MODELS } = require('../config/models');
+const { validateChatPayload, hasNonTextContent } = require('../services/validation');
 
 const router = express.Router();
 
@@ -28,6 +30,33 @@ router.post('/chat/completions', async (req, res, next) => {
     const validationError = validateChatPayload(payload);
     if (validationError) {
       return res.status(validationError.status).json({ error: validationError.error });
+    }
+
+    // Multimodal guard: a known text-only model receiving images/audio would
+    // be rejected by Zen with a cryptic 400. Fail fast with a clear message,
+    // or (opt-in via AUTO_ROUTE_MULTIMODAL=true) route to a multimodal model.
+    const modelInfo = getModelInfo(payload.model);
+    if (modelInfo && !modelInfo.multimodal && hasNonTextContent(payload.messages)) {
+      const multimodal = FREE_MODELS.find((m) => m.multimodal);
+      if (config.autoRouteMultimodal && multimodal) {
+        console.warn(
+          `[Multimodal] Model '${payload.model}' is text-only but request has images/audio; routing to '${multimodal.id}'.`
+        );
+        payload.model = multimodal.id;
+      } else {
+        return res.status(400).json({
+          error: {
+            message:
+              `Model '${payload.model}' only supports text input, but the request contains images/audio. ` +
+              (multimodal
+                ? `Use a multimodal model like '${multimodal.id.replace('opencode/', '')}' (e.g. 'mimo-v2.5-free') for image input, or enable AUTO_ROUTE_MULTIMODAL=true to route automatically.`
+                : ''),
+            type: 'invalid_request_error',
+            param: 'model',
+            code: 'model_does_not_support_content',
+          },
+        });
+      }
     }
 
     const result = await zen.forwardChatCompletion(payload);

@@ -53,6 +53,7 @@ Com isso, o proxy:
 - ✅ **Contexto temporal** — injeta a data/ano atual num system message, para o modelo saber o presente em vez de assumir o corte de treino (2023–2024)
 - ✅ **Uso em streaming** — força `stream_options.include_usage` em streams SSE para o `usage` sempre vir na resposta
 - ✅ **Compatível com Codex/Responses** — sufixos `-responses`, `@responses` e `/responses` nos IDs de modelo são removidos automaticamente
+- ✅ **Guard multimodal** — requisições com imagens/áudio para um modelo só-texto retornam erro claro e acionável (ou roteiam automaticamente p/ `mimo-v2.5-free` com `AUTO_ROUTE_MULTIMODAL=true`)
 - ✅ **Leve** — Um único processo Node, apenas o Express como dependência
 
 ---
@@ -362,6 +363,7 @@ Todas as configurações são feitas via variáveis de ambiente (arquivo `.env` 
 | `CLIENT_API_KEY`             | _(vazio)_                       | Se definido, os clientes devem enviar esta chave. Quando vazio, o proxy fica aberto (uso local) |
 | `DEFAULT_REASONING_EFFORT`   | `xhigh`                         | Esforço de raciocínio padrão para modelos reasoning: `low`, `medium`, `high`, `max` ou `xhigh` |
 | `INJECT_TEMPORAL_CONTEXT`    | `true`                          | Injeta um system message com a data/ano atual em cada requisição. Defina `false` para desativar |
+| `AUTO_ROUTE_MULTIMODAL`      | `false`                         | Se `true`, requisições com imagens/áudio direcionadas a um modelo só-texto são roteadas automaticamente para `mimo-v2.5-free` (multimodal). Se `false`, retorna erro 400 claro |
 | `WARP_AUTO_FAILOVER`         | `true`                          | Re-tenta requisições que falham por rede/gateway via proxy SOCKS5 (WARP) |
 | `WARP_SOCKS_HOST`            | `127.0.0.1`                     | Host do proxy SOCKS5 usado no failover WARP |
 | `WARP_SOCKS_PORT`            | `40000`                         | Porta do proxy SOCKS5 usado no failover WARP |

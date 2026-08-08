@@ -32,6 +32,11 @@ const config = {
   // training cutoff (2023-2024). Set INJECT_TEMPORAL_CONTEXT=false to disable.
   injectTemporalContext: process.env.INJECT_TEMPORAL_CONTEXT !== 'false',
 
+  // When true, requests carrying images/audio that target a known text-only
+  // model are automatically routed to a multimodal free model (mimo-v2.5-free)
+  // instead of being rejected with 400.
+  autoRouteMultimodal: process.env.AUTO_ROUTE_MULTIMODAL === 'true',
+
   // Warp SOCKS Failover config
   warpAutoFailover: process.env.WARP_AUTO_FAILOVER !== 'false',
   warpSocksHost: process.env.WARP_SOCKS_HOST || '127.0.0.1',

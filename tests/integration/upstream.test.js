@@ -87,6 +87,7 @@ describe('Upstream integration (mocked Zen gateway)', () => {
     saved.zenApiKey = config.zenApiKey;
     saved.injectTemporalContext = config.injectTemporalContext;
     saved.warpAutoFailover = config.warpAutoFailover;
+    saved.autoRouteMultimodal = config.autoRouteMultimodal;
 
     config.injectTemporalContext = false;
     config.warpAutoFailover = false;
@@ -98,6 +99,7 @@ describe('Upstream integration (mocked Zen gateway)', () => {
     config.zenApiKey = saved.zenApiKey;
     config.injectTemporalContext = saved.injectTemporalContext;
     config.warpAutoFailover = saved.warpAutoFailover;
+    config.autoRouteMultimodal = saved.autoRouteMultimodal;
     if (upstream) upstream.close();
   });
 
@@ -206,5 +208,75 @@ describe('Upstream integration (mocked Zen gateway)', () => {
     expect(res.status).toBe(401);
     expect(res.body.error.message).toBe('bad key');
     expect(typeof res.body.error.type).toBe('string');
+  });
+
+  test('image to a text-only model returns a clear 400 (no upstream call)', async () => {
+    config.autoRouteMultimodal = false;
+    upstream.close();
+    let called = false;
+    upstream = await startUpstream([
+      () => {
+        called = true;
+        return { status: 200, json: { id: 'x', choices: [] } };
+      },
+    ]);
+    config.zenApiBaseUrl = `http://127.0.0.1:${upstream.address().port}/zen/v1`;
+
+    const res = await request(app, 'POST', '/v1/chat/completions', {
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer public' },
+      body: {
+        model: 'deepseek-v4-flash-free',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'what is this?' },
+              { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(called).toBe(false);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('model_does_not_support_content');
+    expect(res.body.error.message).toContain('mimo-v2.5-free');
+  });
+
+  test('with AUTO_ROUTE_MULTIMODAL, image requests route to the multimodal model', async () => {
+    config.autoRouteMultimodal = true;
+    upstream.close();
+    let received = null;
+    upstream = await startUpstream([
+      (_server, _req, _res, body) => {
+        received = JSON.parse(body);
+        return {
+          status: 200,
+          json: { id: 'x', object: 'chat.completion', model: received.model, choices: [] },
+        };
+      },
+    ]);
+    config.zenApiBaseUrl = `http://127.0.0.1:${upstream.address().port}/zen/v1`;
+
+    const res = await request(app, 'POST', '/v1/chat/completions', {
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer public' },
+      body: {
+        model: 'deepseek-v4-flash-free',
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }],
+          },
+        ],
+      },
+    });
+
+    expect(res.status).toBe(200);
+    // The wire model was switched to the multimodal free model.
+    expect(received.model).toBe('mimo-v2.5-free');
+    expect(res.body.model).toBe('mimo-v2.5-free');
+    // Images still forwarded intact.
+    expect(received.messages[0].content[0].type).toBe('image_url');
   });
 });

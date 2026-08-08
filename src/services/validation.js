@@ -45,4 +45,36 @@ function validateChatPayload(payload) {
   return null;
 }
 
-module.exports = { validateChatPayload };
+/**
+ * Detect non-text content (images/audio) in a chat messages array.
+ *
+ * OpenAI multimodal requests carry content arrays with typed parts such as
+ * { type: "image_url" } or { type: "input_audio" }; some clients also inline
+ * base64 data URIs in user/tool strings. System-prompt prose that merely
+ * mentions "data:image/..." is deliberately ignored (role === 'system').
+ *
+ * @param {*} messages - the chat messages array
+ * @returns {boolean} true when the request carries non-text content
+ */
+function hasNonTextContent(messages) {
+  if (!Array.isArray(messages)) return false;
+  for (const msg of messages) {
+    const content = msg && msg.content;
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part && typeof part === 'object' && part.type && part.type !== 'text') {
+          return true;
+        }
+      }
+    } else if (
+      typeof content === 'string' &&
+      (msg.role === 'user' || msg.role === 'tool') &&
+      /data:image\/(png|jpe?g|gif|webp);base64,/i.test(content)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+module.exports = { validateChatPayload, hasNonTextContent };
