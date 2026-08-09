@@ -66,10 +66,14 @@ Este proxy reproduz esse comportamento sem exigir o binário do opencode, login 
 
 1. Encaminha a requisição para o Zen com `Authorization: Bearer public`
 2. Resolve o ID do modelo: remove o prefixo `opencode/`, remove sufixos `-responses`/`@responses`/`/responses` e mapeia aliases curtos para o ID canônico (`mimo-v2.5` → `mimo-v2.5-free`)
-3. Injeta um system message com a **data/ano atual** e aplica o `reasoning_effort` padrão (e `include_usage` em streams)
-4. Passa todo o resto (mensagens, tools, streaming) **exatamente como recebido**
+3. Injeta um system message com a **data/ano atual** e força `include_usage` em
+   streams; `reasoning_effort` explícito do cliente é preservado e o padrão
+   global só é aplicado com `INJECT_DEFAULT_REASONING_EFFORT=true`
+4. Mantém o histórico, `tools`, `tool_choice` e streaming no formato recebido;
+   o proxy **não inventa `reasoning_content`** para completar mensagens do
+   assistente. Apenas as injeções configuradas acima são acrescentadas.
 
-Como o corpo da requisição é repassado sem alterações, o **function calling nativo funciona de ponta a ponta** — agentes recebem deltas reais de `tool_calls` em vez de texto puro. Em caso de falha de rede/gateway, o proxy re-tenta automaticamente via SOCKS5 (WARP).
+Como o histórico de mensagens e o **function calling nativo** chegam ao gateway sem raciocínio sintético, agentes recebem deltas reais de `tool_calls` em vez de texto puro. Em caso de falha de rede/gateway, o proxy pode tentar uma vez pela rota SOCKS5 (WARP), com limite de tentativas.
 
 ### Arquitetura
 
@@ -217,7 +221,7 @@ curl http://localhost:3000/v1/chat/completions \
   }'
 ```
 
-**Por padrão, o proxy usa `xhigh` (o máximo)** — ou seja, o modelo sempre pensa o máximo possível. Você pode mudar isso por requisição.
+Por padrão, o proxy não força um nível de raciocínio: o cliente e o gateway decidem. Se você realmente quiser uma política global, habilite `INJECT_DEFAULT_REASONING_EFFORT=true`; nesse caso o proxy usa `DEFAULT_REASONING_EFFORT`.
 
 Valores aceitos (confirmados diretamente no gateway Zen/DeepSeek):
 
@@ -229,7 +233,7 @@ Valores aceitos (confirmados diretamente no gateway Zen/DeepSeek):
 | `max`      | Quase o máximo                                  |
 | `xhigh`    | **Máximo** (padrão do proxy)                    |
 
-> Valores inválidos ou omitidos caem automaticamente no padrão configurado (`xhigh`). Valores como `none`/`minimal` são **rejeitados** pelo gateway (o DeepSeek exige algum raciocínio).
+> Com a política global habilitada, valores inválidos ou omitidos caem no padrão configurado (`DEFAULT_REASONING_EFFORT`). Sem ela, o proxy não inventa nem substitui esse campo; valores inválidos podem ser rejeitados pelo gateway.
 
 Para mudar o padrão global, defina a variável de ambiente `DEFAULT_REASONING_EFFORT` (ex: `medium`).
 
@@ -494,7 +498,7 @@ Sim. É o comportamento documentado dentro do próprio código do opencode CLI. 
 Este proxy preserva o **function calling nativo**. O `opencode serve` intercepta e descarta os tools do seu cliente, quebrando agentes de IA. Este proxy repassa tudo intacto.
 
 **Como controlo o quanto o modelo "pensa"?**
-Use o campo `reasoning_effort` na requisição: `low`, `medium`, `high`, `max` ou `xhigh`. Por padrão o proxy usa `xhigh` (máximo). Mude o padrão global com a variável `DEFAULT_REASONING_EFFORT`. Veja a seção [Controlando o Esforço de Raciocínio](#3-controlando-o-esforço-de-raciocínio-reasoning_effort).
+Use o campo `reasoning_effort` na requisição: `low`, `medium`, `high`, `max` ou `xhigh`. Por padrão ele é apenas repassado quando enviado pelo cliente. Para forçar um padrão global, habilite `INJECT_DEFAULT_REASONING_EFFORT=true` e configure `DEFAULT_REASONING_EFFORT`. Veja a seção [Controlando o Esforço de Raciocínio](#3-controlando-o-esforço-de-raciocínio-reasoning_effort).
 
 ---
 

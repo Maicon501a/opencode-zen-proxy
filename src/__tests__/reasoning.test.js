@@ -41,8 +41,8 @@ describe('Reasoning Effort', () => {
       expect(resolveReasoningEffort(null)).toBe(config.defaultReasoningEffort);
     });
 
-    it('should default to xhigh (maximum) by configuration', () => {
-      expect(config.defaultReasoningEffort).toBe('xhigh');
+    it('should use the configured default', () => {
+      expect(VALID_REASONING_EFFORTS).toContain(config.defaultReasoningEffort);
     });
   });
 });

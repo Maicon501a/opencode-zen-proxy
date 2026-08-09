@@ -21,11 +21,13 @@ const config = {
   // (otherwise any client key is accepted, for local use).
   clientApiKey: process.env.CLIENT_API_KEY || '',
 
-  // Reasoning effort applied to reasoning-capable models when the client does
-  // not specify one. Valid values (confirmed against the Zen/DeepSeek gateway):
+  // Optional reasoning effort fallback for reasoning-capable models when the
+  // client does not specify one. HTTP pass-through keeps this disabled by
+  // default; enable explicitly when a local policy requires it. Valid values:
   //   "low" | "medium" | "high" | "max" | "xhigh"
   // "xhigh" maximizes chain-of-thought length. Set via env to override.
   defaultReasoningEffort: process.env.DEFAULT_REASONING_EFFORT || 'xhigh',
+  injectDefaultReasoningEffort: process.env.INJECT_DEFAULT_REASONING_EFFORT === 'true',
 
   // When true, a system message with the current date/year is injected into
   // every request so the model knows the present and does not assume its

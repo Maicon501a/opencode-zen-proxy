@@ -4,6 +4,7 @@ const {
     normalizeChatPayload,
     resolveZenModel,
 } = require('../services/zenClient');
+const { config } = require('../config/constants');
 
 describe('normalizeChatPayload()', () => {
     it('should resolve model aliases on the wire', () => {
@@ -30,16 +31,37 @@ describe('normalizeChatPayload()', () => {
         expect(out.model).toBe('deepseek-v4-flash-free');
     });
 
-    it('should add reasoning_content fallback to assistant messages', () => {
-        const out = normalizeChatPayload({
+    it('should not invent reasoning_content for assistant messages', () => {
+        const payload = {
             model: 'opencode/deepseek-v4-flash-free',
             messages: [
                 { role: 'user', content: 'hi' },
-                { role: 'assistant', content: 'hello there' },
+                {
+                    role: 'assistant',
+                    content: 'I need a tool.',
+                    tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'inspect', arguments: '{}' } }],
+                },
+                { role: 'tool', tool_call_id: 'call_1', content: 'tool result' },
+            ],
+        };
+        const original = JSON.parse(JSON.stringify(payload));
+        const out = normalizeChatPayload(payload);
+        const assistant = out.messages.find((m) => m.role === 'assistant');
+
+        expect(assistant).not.toHaveProperty('reasoning_content');
+        expect(assistant.tool_calls).toEqual(original.messages[1].tool_calls);
+        expect(payload).toEqual(original);
+    });
+
+    it('should preserve an explicitly empty reasoning_content value', () => {
+        const out = normalizeChatPayload({
+            model: 'opencode/deepseek-v4-flash-free',
+            messages: [
+                { role: 'assistant', content: null, reasoning_content: '' },
             ],
         });
         const assistant = out.messages.find((m) => m.role === 'assistant');
-        expect(assistant.reasoning_content).toBe('hello there');
+        expect(assistant).toHaveProperty('reasoning_content', '');
     });
 
     it('should keep existing reasoning_content on assistant messages', () => {
@@ -63,12 +85,16 @@ describe('normalizeChatPayload()', () => {
         expect(out.messages[0].content).toContain(String(new Date().getFullYear()));
     });
 
-    it('should inject default reasoning effort', () => {
+    it('should not inject default reasoning effort unless explicitly enabled', () => {
         const out = normalizeChatPayload({
             model: 'opencode/deepseek-v4-flash-free',
             messages: [{ role: 'user', content: 'hi' }],
         });
-        expect(out.reasoning_effort).toBe('xhigh');
+        if (config.injectDefaultReasoningEffort) {
+            expect(out.reasoning_effort).toBe(config.defaultReasoningEffort);
+        } else {
+            expect(out.reasoning_effort).toBeUndefined();
+        }
     });
 
     it('should keep a valid client reasoning effort', () => {

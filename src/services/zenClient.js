@@ -13,16 +13,19 @@ const warp = require('./warp');
  *
  * The Zen gateway at https://opencode.ai/zen/v1 is itself fully
  * OpenAI-compatible: chat completions, tool/function calling and SSE
- * streaming all pass through untouched. The only adjustments the proxy
- * makes are:
+ * streaming are forwarded in the native format. The proxy additionally:
  *
  *   1. Inject the bearer token ("public" unlocks free-tier models, or a
  *      real ZEN_API_KEY when configured).
  *   2. Strip the "opencode/" prefix from the requested model id, since Zen
  *      expects the bare id (e.g. "deepseek-v4-flash-free").
+ *   3. Optionally adds temporal context, an explicitly enabled default
+ *      reasoning effort and stream usage metadata. These are request-level
+ *      fields only; assistant reasoning history is never synthesized.
  *
- * Everything else — messages, tools, tool_choice, response_format, stream —
- * is forwarded verbatim so native tool calling works end-to-end.
+ * Everything else — including assistant history and tool-call metadata — is
+ * forwarded as supplied so native tool calling works end-to-end. In
+ * particular, this client never fabricates `reasoning_content`.
  */
 
 /**
@@ -274,42 +277,56 @@ function isNetworkFailure(err) {
 }
 
 /**
- * Execute an upstream request function with WARP failover, mirroring the
- * grok-kimi-proxy-route flow:
+ * Execute an upstream request function with bounded WARP failover, mirroring
+ * the grok-kimi-proxy-route flow:
  *
  *   1. If WARP is already active, route through it.
  *   2. If that WARP-routed request dies with a network error, invalidate the
  *      stale state and retry once on the default route.
  *   3. If a direct request fails with a failover-eligible error, ACTIVATE
  *      WARP on demand (warp-cli) and retry through the SOCKS endpoint.
- *   4. If activation fails, the original error is propagated.
+ *   4. If the WARP retry becomes stale, make at most one final direct retry.
+ *   5. If activation fails, the original error is propagated.
  *
  * @param {(viaWarp: boolean) => Promise<object>} requestFn
  * @returns {Promise<object>} the upstream result
  */
 async function requestWithWarpFailover(requestFn) {
-  const viaWarp = warp.isActive();
-  try {
-    return await requestFn(viaWarp);
-  } catch (err) {
-    if (viaWarp && warp.enabled() && isNetworkFailure(err)) {
-      // Stale WARP state: invalidate and retry on the default route.
-      warp.markInactive(err.message);
-      console.warn(`[WARP Failover] Stale WARP state; retrying direct: ${err.message}`);
-      return requestFn(false);
-    }
-    if (!viaWarp && warp.enabled() && isFailoverEligible(err, err.statusCode, err.message)) {
-      console.warn(`[WARP Failover] Upstream failure (${err.statusCode || err.code}). Activating WARP...`);
-      try {
-        await warp.activate();
-      } catch (activateErr) {
-        console.error(`[WARP Failover] WARP activation failed: ${activateErr.message}`);
-        throw err;
+  let viaWarp = warp.isActive();
+  let warpTried = viaWarp;
+  let directAttempts = viaWarp ? 0 : 1;
+
+  while (true) {
+    try {
+      return await requestFn(viaWarp);
+    } catch (err) {
+      if (viaWarp && warp.enabled() && isNetworkFailure(err)) {
+        // Stale WARP state: invalidate it and allow one final direct retry.
+        // `warpTried` stays true so a bad direct retry cannot reactivate WARP
+        // indefinitely and resend the same request forever.
+        warp.markInactive(err.message);
+        console.warn(`[WARP Failover] Stale WARP state; retrying direct: ${err.message}`);
+        viaWarp = false;
+        if (directAttempts >= 2) throw err;
+        directAttempts += 1;
+        continue;
       }
-      // Recurse so the retry itself can handle a stale/again-failing tunnel.
-      return requestWithWarpFailover(requestFn);
+
+      if (!viaWarp && !warpTried && warp.enabled() && isFailoverEligible(err, err.statusCode, err.message)) {
+        warpTried = true;
+        console.warn(`[WARP Failover] Upstream failure (${err.statusCode || err.code}). Activating WARP...`);
+        try {
+          await warp.activate();
+        } catch (activateErr) {
+          console.error(`[WARP Failover] WARP activation failed: ${activateErr.message}`);
+          throw err;
+        }
+        viaWarp = true;
+        continue;
+      }
+
+      throw err;
     }
-    throw err;
   }
 }
 
@@ -355,10 +372,10 @@ function ensureTemporalContext(messages) {
  * Pure function (no I/O) so the transformation is unit-testable. It:
  *   - resolves the model id (strips "opencode/" prefix, "-responses" suffixes
  *     and maps short aliases like "mimo-v2.5" -> "mimo-v2.5-free")
- *   - adds a reasoning_content fallback to assistant messages that lost it
+ *   - preserves assistant messages and reasoning_content exactly as supplied
  *   - injects the current date/year as temporal context (config-gated)
- *   - injects the default reasoning_effort when the client did not send a
- *     valid one
+ *   - preserves a client reasoning_effort, with an optional configured
+ *     fallback when INJECT_DEFAULT_REASONING_EFFORT is enabled
  *   - forces stream_options.include_usage on SSE streams so usage is reported
  *
  * @param {object} payload - raw OpenAI chat completion request body
@@ -370,28 +387,21 @@ function normalizeChatPayload(payload) {
     normalized.model = resolveZenModel(normalized.model);
   }
 
-  // Sanitize messages: ensure assistant messages in history that lost reasoning_content
-  // get a fallback so OpenCode Zen / DeepSeek upstream does not reject with 400
-  if (Array.isArray(normalized.messages)) {
-    normalized.messages = normalized.messages.map((msg) => {
-      if (msg && msg.role === 'assistant' && !msg.reasoning_content) {
-        return {
-          ...msg,
-          reasoning_content: msg.content || 'Thought process completed.',
-        };
-      }
-      return msg;
-    });
-  }
-
   // Inject current date/year so the model knows the present (e.g. 2026) instead
   // of assuming its training cutoff. Mirrors the upstream adapter.
   normalized.messages = ensureTemporalContext(normalized.messages);
 
-  // Inject default reasoning effort when the client did not request a valid
-  // one. The field is forwarded as-is; Zen/DeepSeek only honors it on
-  // reasoning-capable models and ignores it elsewhere.
-  normalized.reasoning_effort = resolveReasoningEffort(normalized.reasoning_effort);
+  // Preserve the HTTP client's reasoning policy by default. A configured
+  // fallback is available as an explicit opt-in, but silently forcing high
+  // effort on every request can make an agent appear stuck in reasoning.
+  if (config.injectDefaultReasoningEffort) {
+    normalized.reasoning_effort = resolveReasoningEffort(normalized.reasoning_effort);
+  } else if (
+    typeof normalized.reasoning_effort === 'string' &&
+    VALID_REASONING_EFFORTS.includes(normalized.reasoning_effort.toLowerCase())
+  ) {
+    normalized.reasoning_effort = normalized.reasoning_effort.toLowerCase();
+  }
 
   // Ensure usage is reported on SSE streams — without stream_options many
   // providers omit usage in streamed responses. Respect a client-specified value.
@@ -411,10 +421,9 @@ function normalizeChatPayload(payload) {
  *
  * The payload is passed through unchanged except for:
  *   - the model id (strips the "opencode/" prefix and maps short aliases)
- *   - reasoning_effort, which defaults to the configured maximum ("xhigh")
- *     when the client does not specify a valid value, so reasoning models
- *     always think at full depth. Clients can override per-request with any
- *     of: low | medium | high | max | xhigh.
+ *   - reasoning_effort only when the client sends it, unless the explicit
+ *     INJECT_DEFAULT_REASONING_EFFORT=true policy is enabled. Valid values are
+ *     low | medium | high | max | xhigh.
  *   - a temporal-context system message with the current date/year
  *   - stream_options.include_usage on SSE streams
  *

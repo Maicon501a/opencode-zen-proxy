@@ -95,6 +95,27 @@ describe('requestWithWarpFailover()', () => {
     expect(fn).toHaveBeenNthCalledWith(2, false);
   });
 
+  it('should not reactivate WARP indefinitely after a stale retry fails', async () => {
+    const directFailure = new Error('direct gateway unavailable');
+    directFailure.statusCode = 503;
+    const warpFailure = new Error('warp connection reset');
+    warpFailure.code = 'ECONNRESET';
+    const finalDirectFailure = new Error('direct still unavailable');
+    finalDirectFailure.statusCode = 503;
+    const fn = jest
+      .fn()
+      .mockRejectedValueOnce(directFailure)
+      .mockRejectedValueOnce(warpFailure)
+      .mockRejectedValueOnce(finalDirectFailure);
+
+    await expect(zen.requestWithWarpFailover(fn)).rejects.toBe(finalDirectFailure);
+    expect(warp.activate).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledTimes(3);
+    expect(fn).toHaveBeenNthCalledWith(1, false);
+    expect(fn).toHaveBeenNthCalledWith(2, true);
+    expect(fn).toHaveBeenNthCalledWith(3, false);
+  });
+
   it('should be a no-op when WARP failover is disabled', async () => {
     warp.enabled.mockReturnValue(false);
     const err = new Error('connect failed');
