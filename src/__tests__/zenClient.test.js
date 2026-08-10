@@ -75,14 +75,27 @@ describe('normalizeChatPayload()', () => {
         expect(assistant.reasoning_content).toBe('thought...');
     });
 
-    it('should inject a temporal-context system message', () => {
+    it('should not inject temporal context when transparent mode is disabled', () => {
+        const original = config.injectTemporalContext;
+        config.injectTemporalContext = false;
         const out = normalizeChatPayload({
             model: 'opencode/deepseek-v4-flash-free',
             messages: [{ role: 'user', content: 'hi' }],
         });
+        config.injectTemporalContext = original;
+        expect(out.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    });
+
+    it('should inject temporal context only when explicitly enabled', () => {
+        const original = config.injectTemporalContext;
+        config.injectTemporalContext = true;
+        const out = normalizeChatPayload({
+            model: 'opencode/deepseek-v4-flash-free',
+            messages: [{ role: 'user', content: 'hi' }],
+        });
+        config.injectTemporalContext = original;
         expect(out.messages[0].role).toBe('system');
         expect(out.messages[0].content).toContain('Temporal context:');
-        expect(out.messages[0].content).toContain(String(new Date().getFullYear()));
     });
 
     it('should not inject default reasoning effort unless explicitly enabled', () => {
@@ -106,13 +119,13 @@ describe('normalizeChatPayload()', () => {
         expect(out.reasoning_effort).toBe('low');
     });
 
-    it('should force include_usage on SSE streams', () => {
+    it('should not add stream_options to SSE requests', () => {
         const out = normalizeChatPayload({
             model: 'opencode/deepseek-v4-flash-free',
             messages: [{ role: 'user', content: 'hi' }],
             stream: true,
         });
-        expect(out.stream_options).toEqual({ include_usage: true });
+        expect(out.stream_options).toBeUndefined();
     });
 
     it('should not add stream_options to non-streaming requests', () => {
@@ -123,7 +136,7 @@ describe('normalizeChatPayload()', () => {
         expect(out.stream_options).toBeUndefined();
     });
 
-    it('should respect a client-specified include_usage', () => {
+    it('should preserve client-specified stream_options verbatim', () => {
         const out = normalizeChatPayload({
             model: 'opencode/deepseek-v4-flash-free',
             messages: [{ role: 'user', content: 'hi' }],

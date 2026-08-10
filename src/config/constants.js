@@ -29,10 +29,9 @@ const config = {
   defaultReasoningEffort: process.env.DEFAULT_REASONING_EFFORT || 'xhigh',
   injectDefaultReasoningEffort: process.env.INJECT_DEFAULT_REASONING_EFFORT === 'true',
 
-  // When true, a system message with the current date/year is injected into
-  // every request so the model knows the present and does not assume its
-  // training cutoff (2023-2024). Set INJECT_TEMPORAL_CONTEXT=false to disable.
-  injectTemporalContext: process.env.INJECT_TEMPORAL_CONTEXT !== 'false',
+  // Opt-in only: a transparent proxy must not add messages to the client's
+  // conversation unless explicitly requested by local policy.
+  injectTemporalContext: process.env.INJECT_TEMPORAL_CONTEXT === 'true',
 
   // When true, requests carrying images/audio that target a known text-only
   // model are automatically routed to a multimodal free model (mimo-v2.5-free)

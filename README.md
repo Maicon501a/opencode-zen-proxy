@@ -50,8 +50,8 @@ Com isso, o proxy:
 - ✅ **Drop-in compatível** — Qualquer cliente OpenAI funciona apenas mudando a `baseURL`
 - ✅ **Aliases de modelo** — `deepseek-v4-flash`, `mimo-v2.5` ou `opencode/deepseek-v4-flash-free` — todos funcionam e são resolvidos para o ID canônico no wire
 - ✅ **Failover WARP** — em falhas de rede/gateway (429, 502, 503, 504 e 500 de gateway), a requisição é automaticamente repetida via proxy SOCKS5 local (WARP)
-- ✅ **Contexto temporal** — injeta a data/ano atual num system message, para o modelo saber o presente em vez de assumir o corte de treino (2023–2024)
-- ✅ **Uso em streaming** — força `stream_options.include_usage` em streams SSE para o `usage` sempre vir na resposta
+- ✅ **Pass-through transparente** — `messages`, `tools`, `tool_choice`, `max_tokens`, `stream_options` e reasoning do cliente não são inventados nem sobrescritos
+- ✅ **SSE compatível** — preserva os eventos recebidos e encerra no primeiro `[DONE]`, descartando trailers fora do protocolo
 - ✅ **Compatível com Codex/Responses** — sufixos `-responses`, `@responses` e `/responses` nos IDs de modelo são removidos automaticamente
 - ✅ **Guard multimodal** — requisições com imagens/áudio para um modelo só-texto retornam erro claro e acionável (ou roteiam automaticamente p/ `mimo-v2.5-free` com `AUTO_ROUTE_MULTIMODAL=true`)
 - ✅ **Leve** — Um único processo Node, apenas o Express como dependência
@@ -66,12 +66,11 @@ Este proxy reproduz esse comportamento sem exigir o binário do opencode, login 
 
 1. Encaminha a requisição para o Zen com `Authorization: Bearer public`
 2. Resolve o ID do modelo: remove o prefixo `opencode/`, remove sufixos `-responses`/`@responses`/`/responses` e mapeia aliases curtos para o ID canônico (`mimo-v2.5` → `mimo-v2.5-free`)
-3. Injeta um system message com a **data/ano atual** e força `include_usage` em
-   streams; `reasoning_effort` explícito do cliente é preservado e o padrão
-   global só é aplicado com `INJECT_DEFAULT_REASONING_EFFORT=true`
-4. Mantém o histórico, `tools`, `tool_choice` e streaming no formato recebido;
-   o proxy **não inventa `reasoning_content`** para completar mensagens do
-   assistente. Apenas as injeções configuradas acima são acrescentadas.
+3. Mantém o payload recebido — incluindo histórico, `tools`, `tool_choice`,
+   `max_tokens`, `stream_options` e `reasoning_content` — sem sintetizar campos;
+   apenas o model ID é normalizado para o formato aceito pelo Zen
+4. Finaliza o SSE no primeiro `[DONE]`; o proxy **não inventa
+   `reasoning_content`** nem altera chamadas de ferramenta.
 
 Como o histórico de mensagens e o **function calling nativo** chegam ao gateway sem raciocínio sintético, agentes recebem deltas reais de `tool_calls` em vez de texto puro. Em caso de falha de rede/gateway, o proxy pode tentar uma vez pela rota SOCKS5 (WARP), com limite de tentativas.
 
@@ -249,7 +248,7 @@ curl http://localhost:3000/v1/chat/completions \
   }'
 ```
 
-> O proxy força `stream_options.include_usage: true` em streams SSE (a menos que o cliente especifique outro valor), garantindo que o objeto `usage` venha no último chunk.
+> `stream_options` é encaminhado exatamente como enviado pelo cliente. O proxy não força `include_usage`.
 
 ### 5. Listar Modelos Disponíveis
 
@@ -366,7 +365,7 @@ Todas as configurações são feitas via variáveis de ambiente (arquivo `.env` 
 | `ZEN_API_KEY` / `OPENCODE_API_KEY` | `public`                  | Token bearer enviado ao Zen. `public` libera os modelos gratuitos; defina uma chave real para acessar também modelos pagos |
 | `CLIENT_API_KEY`             | _(vazio)_                       | Se definido, os clientes devem enviar esta chave. Quando vazio, o proxy fica aberto (uso local) |
 | `DEFAULT_REASONING_EFFORT`   | `xhigh`                         | Esforço de raciocínio padrão para modelos reasoning: `low`, `medium`, `high`, `max` ou `xhigh` |
-| `INJECT_TEMPORAL_CONTEXT`    | `true`                          | Injeta um system message com a data/ano atual em cada requisição. Defina `false` para desativar |
+| `INJECT_TEMPORAL_CONTEXT`    | `false`                         | Se `true`, injeta um system message com a data/ano atual. Mantenha `false` para pass-through transparente |
 | `AUTO_ROUTE_MULTIMODAL`      | `false`                         | Se `true`, requisições com imagens/áudio direcionadas a um modelo só-texto são roteadas automaticamente para `mimo-v2.5-free` (multimodal). Se `false`, retorna erro 400 claro |
 | `WARP_AUTO_FAILOVER`         | `true`                          | Em falhas elegíveis (rede, 429/502/503/504, 500 de gateway), o proxy **ativa o WARP sob demanda** via `warp-cli` e re-tenta pelo proxy SOCKS5 local |
 | `WARP_SOCKS_HOST`            | `127.0.0.1`                     | Host do proxy SOCKS5 usado no failover WARP |

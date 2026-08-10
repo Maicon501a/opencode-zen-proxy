@@ -5,6 +5,7 @@ const zen = require('../services/zenClient');
 const { config } = require('../config/constants');
 const { getModelInfo, FREE_MODELS } = require('../config/models');
 const { validateChatPayload, hasNonTextContent } = require('../services/validation');
+const { createCompletionSseFilter } = require('../services/sse');
 
 const router = express.Router();
 
@@ -72,18 +73,26 @@ router.post('/chat/completions', async (req, res, next) => {
       res.setHeader('X-Accel-Buffering', 'no');
 
       const upstream = result.response;
-      upstream.pipe(res);
-
-      upstream.on('error', (err) => {
+      const filtered = createCompletionSseFilter();
+      const handleStreamError = (err) => {
         if (!res.headersSent) {
           next(err);
         } else {
           res.end();
         }
-      });
+      };
+
+      // Preserve every upstream SSE event until the protocol terminator. Zen
+      // currently appends a cost event after [DONE]; that event is not part of
+      // the completion stream and causes strict OpenAI-compatible clients to
+      // report "response contained no choices".
+      upstream.on('error', handleStreamError);
+      filtered.on('error', handleStreamError);
+      upstream.pipe(filtered).pipe(res);
 
       req.on('close', () => {
-        upstream.destroy();
+        if (!upstream.destroyed) upstream.destroy();
+        if (!filtered.destroyed) filtered.destroy();
       });
       return;
     }

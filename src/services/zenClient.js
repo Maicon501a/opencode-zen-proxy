@@ -19,8 +19,8 @@ const warp = require('./warp');
  *      real ZEN_API_KEY when configured).
  *   2. Strip the "opencode/" prefix from the requested model id, since Zen
  *      expects the bare id (e.g. "deepseek-v4-flash-free").
- *   3. Optionally adds temporal context, an explicitly enabled default
- *      reasoning effort and stream usage metadata. These are request-level
+ *   3. Optionally adds temporal context or an explicitly enabled default
+ *      reasoning effort when local policy opts in. These are request-level
  *      fields only; assistant reasoning history is never synthesized.
  *
  * Everything else — including assistant history and tool-call metadata — is
@@ -373,10 +373,10 @@ function ensureTemporalContext(messages) {
  *   - resolves the model id (strips "opencode/" prefix, "-responses" suffixes
  *     and maps short aliases like "mimo-v2.5" -> "mimo-v2.5-free")
  *   - preserves assistant messages and reasoning_content exactly as supplied
- *   - injects the current date/year as temporal context (config-gated)
+ *   - injects the current date/year as temporal context only when explicitly enabled
  *   - preserves a client reasoning_effort, with an optional configured
  *     fallback when INJECT_DEFAULT_REASONING_EFFORT is enabled
- *   - forces stream_options.include_usage on SSE streams so usage is reported
+ *   - preserves stream_options exactly as supplied by the client
  *
  * @param {object} payload - raw OpenAI chat completion request body
  * @returns {object} normalized payload
@@ -403,16 +403,6 @@ function normalizeChatPayload(payload) {
     normalized.reasoning_effort = normalized.reasoning_effort.toLowerCase();
   }
 
-  // Ensure usage is reported on SSE streams — without stream_options many
-  // providers omit usage in streamed responses. Respect a client-specified value.
-  if (normalized.stream === true) {
-    if (normalized.stream_options === null || normalized.stream_options === undefined) {
-      normalized.stream_options = { include_usage: true };
-    } else if (normalized.stream_options.include_usage === undefined) {
-      normalized.stream_options = { ...normalized.stream_options, include_usage: true };
-    }
-  }
-
   return normalized;
 }
 
@@ -424,12 +414,11 @@ function normalizeChatPayload(payload) {
  *   - reasoning_effort only when the client sends it, unless the explicit
  *     INJECT_DEFAULT_REASONING_EFFORT=true policy is enabled. Valid values are
  *     low | medium | high | max | xhigh.
- *   - a temporal-context system message with the current date/year
- *   - stream_options.include_usage on SSE streams
+ *   - a temporal-context system message only when explicitly enabled
  *
  * tools, tool_choice, response_format, temperature, top_p, seed, stream,
- * max_tokens, etc. all reach the upstream model intact, preserving native
- * OpenAI function calling.
+ * stream_options, max_tokens, etc. all reach the upstream model intact,
+ * preserving native OpenAI function calling.
  *
  * @param {object} payload - the raw OpenAI chat completion request body
  * @returns {Promise<object>} Zen response ({stream, response|data, statusCode})

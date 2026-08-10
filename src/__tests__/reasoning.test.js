@@ -106,6 +106,17 @@ describe('stripResponsesSuffix()', () => {
 });
 
 describe('ensureTemporalContext()', () => {
+  let originalInjectTemporalContext;
+
+  beforeAll(() => {
+    originalInjectTemporalContext = config.injectTemporalContext;
+    config.injectTemporalContext = true;
+  });
+
+  afterAll(() => {
+    config.injectTemporalContext = originalInjectTemporalContext;
+  });
+
   it('should prepend a system message when conversation has no system message', () => {
     const out = ensureTemporalContext([{ role: 'user', content: 'hi' }]);
     expect(out.length).toBe(2);

@@ -162,7 +162,7 @@ describe('Upstream integration (mocked Zen gateway)', () => {
     expect(receivedAuth).toBe('Bearer public');
   });
 
-  test('streaming responses pass through as SSE', async () => {
+    test('streaming responses pass through as SSE', async () => {
     upstream.close();
     upstream = await startUpstream([
       (_req, _res) => {
@@ -185,6 +185,33 @@ describe('Upstream integration (mocked Zen gateway)', () => {
     expect(res.headers['content-type']).toMatch('text/event-stream');
     expect(res.body).toContain('"delta"');
     expect(res.body).toContain('"content":"hi"');
+  });
+
+  test('streaming stops at [DONE] and drops upstream trailers', async () => {
+    upstream.close();
+    upstream = await startUpstream([
+      () => ({
+        status: 200,
+        stream:
+          'data: {"id":"x","choices":[{"delta":{"content":"hi"}}]}\n\n' +
+          'data: [DONE]\n\n' +
+          'data: {"choices":[],"cost":"0"}\n\n',
+      }),
+    ]);
+    config.zenApiBaseUrl = `http://127.0.0.1:${upstream.address().port}/zen/v1`;
+
+    const res = await request(app, 'POST', '/v1/chat/completions', {
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer public' },
+      body: {
+        model: 'deepseek-v4-flash-free',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toContain('data: [DONE]');
+    expect(res.body).not.toContain('"cost":"0"');
   });
 
   test('upstream errors are mapped to the OpenAI error envelope', async () => {
