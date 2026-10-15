@@ -97,6 +97,7 @@
   };
 
   const PAGE_META = {
+    chat: ['Chat', 'conversa direta — texto, imagem, vídeo e áudio'],
     dashboard: ['Dashboard', 'visão geral em tempo real'],
     models: ['Modelos', 'catálogo gratuito com limites de contexto'],
     keys: ['API Keys', 'opcional — atribua consumo por cliente'],
@@ -834,16 +835,505 @@
     }
   }
 
+  // ============================== chat ==============================
+
+  const CHAT_KEY = 'zenchat.v1';
+
+  const chat = {
+    model: null,
+    messages: [],
+    attachments: [],
+    models: [],
+    streaming: false,
+    abort: null,
+  };
+
+  const shortModel = (id) => String(id || '').replace('opencode/', '');
+
+  function chatGreeting() {
+    const h = new Date().getHours();
+    if (h < 5) return 'Boa madrugada';
+    if (h < 12) return 'Bom dia';
+    if (h < 18) return 'Boa tarde';
+    return 'Boa noite';
+  }
+
+  function chatSave() {
+    try {
+      localStorage.setItem(CHAT_KEY, JSON.stringify({
+        model: chat.model,
+        messages: chat.messages.slice(-80).map((m) => ({
+          role: m.role,
+          content: m.content || '',
+          thinkMs: m.thinkMs || null,
+          ms: m.ms || null,
+        })),
+      }));
+    } catch { /* localStorage cheio/indisponível — segue sem persistir */ }
+  }
+
+  function chatLoad() {
+    try {
+      const raw = localStorage.getItem(CHAT_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (data && Array.isArray(data.messages)) {
+        chat.messages = data.messages.filter((m) => m
+          && (m.role === 'user' || m.role === 'assistant')
+          && typeof m.content === 'string');
+      }
+      if (data && typeof data.model === 'string' && data.model) chat.model = data.model;
+    } catch { /* histórico corrompido — ignora */ }
+  }
+
+  function chatScrollBottom() {
+    const el = $('#chat-scroll');
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
+  function autoGrow() {
+    const input = $('#chat-input');
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 190)}px`;
+  }
+
+  function renderChatModelName() {
+    const el = $('#chat-model-name');
+    if (el) el.textContent = chat.model ? shortModel(chat.model) : 'modelo';
+  }
+
+  function renderModelPop() {
+    const list = $('#chat-model-list');
+    if (!list) return;
+    if (!chat.models.length) {
+      list.innerHTML = '<div class="muted pad">catálogo indisponível — o proxy está rodando?</div>';
+      return;
+    }
+    list.innerHTML = chat.models.map((m) => {
+      const mods = Array.isArray(m.inputModalities) ? m.inputModalities.filter((x) => x !== 'text') : [];
+      const meta = [];
+      if (m.contextWindow) meta.push(`${shortNum(m.contextWindow)} ctx`);
+      if (mods.length) meta.push(mods.join(' · '));
+      return `<button type="button" class="model-pop-item ${m.id === chat.model ? 'active' : ''}" data-model="${esc(m.id)}">
+        <span class="model-pop-name">${esc(shortModel(m.name || m.id))}</span>
+        <span class="model-pop-meta">${esc(meta.join('  —  ') || 'texto')}</span>
+      </button>`;
+    }).join('');
+  }
+
+  function toggleModelPop(force) {
+    const pop = $('#chat-model-pop');
+    if (!pop) return;
+    const show = force != null ? force : pop.hidden;
+    pop.hidden = !show;
+    if (show) renderModelPop();
+  }
+
+  async function loadChatModels() {
+    if (!S.models) await loadModels(false);
+    const free = (S.models && S.models.free && Array.isArray(S.models.free.data) && S.models.free.data.length)
+      ? S.models.free.data
+      : ((S.models && S.models.live && Array.isArray(S.models.live.data)) ? S.models.live.data : []).filter((m) => m.free !== false);
+    chat.models = free;
+    if (!chat.model && chat.models.length) {
+      const preferred = chat.models.find((m) => m.id === 'opencode/deepseek-v4.1-flash-free');
+      chat.model = (preferred || chat.models[0]).id;
+    }
+    renderChatModelName();
+    renderModelPop();
+  }
+
+  // ---- anexos ----
+
+  function renderAttachments() {
+    const wrap = $('#chat-attachments');
+    if (!wrap) return;
+    wrap.classList.toggle('has', chat.attachments.length > 0);
+    wrap.innerHTML = chat.attachments.map((a) => {
+      const inner = a.kind === 'image'
+        ? `<img src="${a.dataUrl}" alt=""/>`
+        : `<span class="att-glyph">${a.kind === 'video' ? '▶' : '♪'}</span>`;
+      return `<div class="chat-att" title="${esc(a.name)} — ${(a.size / 1048576).toFixed(1)} MB">
+        ${inner}
+        <span class="att-name">${esc(a.name)}</span>
+        <button type="button" class="att-x" data-att="${a.id}" title="remover">×</button>
+      </div>`;
+    }).join('');
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('falha na leitura'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function addFiles(fileList) {
+    const files = Array.from(fileList || []);
+    for (const file of files) {
+      const kind = file.type.startsWith('image/') ? 'image'
+        : file.type.startsWith('video/') ? 'video'
+          : file.type.startsWith('audio/') ? 'audio' : null;
+      if (!kind) { toast(`tipo não suportado: ${file.name || 'arquivo'}`, 'warn'); continue; }
+      if (file.size > 20 * 1048576) { toast(`${file.name}: muito grande (máx 20 MB)`, 'warn'); continue; }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        chat.attachments.push({
+          id: Math.random().toString(36).slice(2),
+          kind,
+          name: file.name || kind,
+          size: file.size,
+          mime: file.type,
+          dataUrl,
+          b64: dataUrl.split(',')[1] || '',
+        });
+      } catch { toast(`falha ao ler ${file.name || 'arquivo'}`, 'err'); }
+    }
+    renderAttachments();
+  }
+
+  function attachmentPart(a) {
+    if (a.kind === 'image') return { type: 'image_url', image_url: { url: a.dataUrl } };
+    if (a.kind === 'video') return { type: 'video_url', video_url: { url: a.dataUrl } };
+    const format = (a.mime.split('/')[1] || 'wav').replace('mpeg', 'mp3').replace('x-wav', 'wav');
+    return { type: 'input_audio', input_audio: { data: a.b64, format } };
+  }
+
+  // ---- renderização das mensagens ----
+
+  function mediaThumb(media) {
+    if (media.kind === 'image') {
+      const img = document.createElement('img');
+      img.src = media.url;
+      img.alt = media.name || '';
+      return img;
+    }
+    const chip = document.createElement('div');
+    chip.className = 'media-chip';
+    chip.textContent = `${media.kind === 'video' ? '▶' : '♪'} ${media.name || media.kind}`;
+    return chip;
+  }
+
+  function thinkBlock(reasoning, thinkMs) {
+    const secs = Math.max(1, Math.round((thinkMs || 0) / 1000));
+    const el = document.createElement('div');
+    el.className = 'think';
+    el.innerHTML = `<button type="button" class="think-head">
+        <span class="think-ico">✦</span>
+        <span class="think-label">raciocinou por ${secs}s</span>
+        <span class="think-caret">▸</span>
+      </button>
+      <div class="think-body"></div>`;
+    el.querySelector('.think-body').textContent = reasoning;
+    return el;
+  }
+
+  function buildMsg(m, index) {
+    const el = document.createElement('div');
+    el.className = `msg msg-${m.role}`;
+    el.dataset.index = String(index);
+
+    if (m.role === 'user') {
+      if (Array.isArray(m.media) && m.media.length) {
+        const media = document.createElement('div');
+        media.className = 'msg-media';
+        m.media.forEach((item) => media.appendChild(mediaThumb(item)));
+        el.appendChild(media);
+      }
+      if (m.content) {
+        const text = document.createElement('div');
+        text.className = 'msg-text';
+        text.textContent = m.content;
+        el.appendChild(text);
+      }
+    } else {
+      if (m.reasoning) el.appendChild(thinkBlock(m.reasoning, m.thinkMs));
+      const md = document.createElement('div');
+      md.className = 'msg-content chat-md';
+      md.innerHTML = mdToHtml(m.content || '');
+      el.appendChild(md);
+    }
+
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'msg-copy';
+    copy.textContent = 'copiar';
+    copy.addEventListener('click', () => copyText(m.content || '', 'mensagem'));
+    el.appendChild(copy);
+    return el;
+  }
+
+  function renderChatMessages() {
+    const wrap = $('#chat-msgs');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    chat.messages.forEach((m, i) => wrap.appendChild(buildMsg(m, i)));
+    const empty = $('#chat-empty');
+    if (empty) {
+      empty.classList.toggle('hidden', chat.messages.length > 0);
+      $('#chat-hello').textContent = chatGreeting();
+    }
+  }
+
+  function setSendState(streaming) {
+    const glyph = $('#chat-send-glyph');
+    const btn = $('#btn-chat-send');
+    if (glyph) glyph.textContent = streaming ? '■' : '↑';
+    if (btn) btn.classList.toggle('stop', streaming);
+  }
+
+  // ---- envio ----
+
+  function apiMessages() {
+    return chat.messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .filter((m) => !(m.role === 'assistant' && !String(m.content || '').trim()))
+      .map((m) => (m.role === 'user'
+        ? { role: 'user', content: Array.isArray(m.apiContent) ? m.apiContent : (m.content || '') }
+        : { role: 'assistant', content: m.content || '' }));
+  }
+
+  async function sendChat() {
+    if (chat.streaming) return;
+    toggleModelPop(false);
+    const input = $('#chat-input');
+    const text = (input.value || '').trim();
+    if (!text && !chat.attachments.length) return;
+    if (!chat.model) { toast('nenhum modelo selecionado', 'warn'); return; }
+    if (!S.state || !S.state.proxyUrl) { toast('o proxy não está rodando — veja em Configurações', 'err'); return; }
+
+    const attachments = chat.attachments.slice();
+    const totalBytes = attachments.reduce((sum, a) => sum + a.size, 0);
+    if (totalBytes > 30 * 1048576) { toast('anexos somam mais de 30 MB — envie em partes', 'warn'); return; }
+
+    const parts = [];
+    if (text) parts.push({ type: 'text', text });
+    attachments.forEach((a) => parts.push(attachmentPart(a)));
+
+    chat.messages.push({
+      role: 'user',
+      content: text,
+      media: attachments.map((a) => ({ kind: a.kind, name: a.name, url: a.dataUrl })),
+      apiContent: attachments.length ? parts : text,
+    });
+    chat.attachments = [];
+    renderAttachments();
+    input.value = '';
+    autoGrow();
+
+    const asst = { role: 'assistant', content: '', reasoning: '', thinkMs: null, ms: null };
+    chat.messages.push(asst);
+
+    const wrap = $('#chat-msgs');
+    wrap.appendChild(buildMsg(chat.messages[chat.messages.length - 2], chat.messages.length - 2));
+    $('#chat-empty').classList.add('hidden');
+
+    const asstEl = document.createElement('div');
+    asstEl.className = 'msg msg-assistant';
+    const thinkEl = document.createElement('div');
+    thinkEl.className = 'think pending';
+    thinkEl.innerHTML = `<button type="button" class="think-head">
+        <span class="think-ico">✦</span>
+        <span class="think-label">pensando…</span>
+        <span class="think-caret">▸</span>
+      </button>
+      <div class="think-body"></div>`;
+    asstEl.appendChild(thinkEl);
+    const contentEl = document.createElement('div');
+    contentEl.className = 'msg-content chat-md';
+    asstEl.appendChild(contentEl);
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'msg-copy';
+    copy.textContent = 'copiar';
+    copy.addEventListener('click', () => copyText(asst.content || '', 'mensagem'));
+    asstEl.appendChild(copy);
+    wrap.appendChild(asstEl);
+    chatScrollBottom();
+
+    await streamCompletion(asst, thinkEl, contentEl);
+  }
+
+  async function streamCompletion(asst, thinkEl, contentEl) {
+    chat.streaming = true;
+    setSendState(true);
+    const ctrl = new AbortController();
+    chat.abort = ctrl;
+    const started = Date.now();
+    const base = (S.state && S.state.proxyUrl) || 'http://127.0.0.1:3000';
+    const body = { model: chat.model, messages: apiMessages(), stream: true };
+
+    const thinkBody = thinkEl.querySelector('.think-body');
+    const thinkLabel = thinkEl.querySelector('.think-label');
+    const caret = document.createElement('span');
+    caret.className = 'stream-caret';
+
+    let reasoning = '';
+    let content = '';
+    let firstContentAt = 0;
+    let lastPaint = 0;
+    let streamingPaint = true;
+    let errorText = '';
+
+    const paint = (force) => {
+      const now = Date.now();
+      if (!force && now - lastPaint < 80) return;
+      lastPaint = now;
+      thinkBody.textContent = reasoning;
+      if (thinkEl.classList.contains('open')) thinkBody.scrollTop = thinkBody.scrollHeight;
+      contentEl.innerHTML = mdToHtml(content);
+      if (streamingPaint) contentEl.appendChild(caret);
+      chatScrollBottom();
+    };
+
+    const finishThink = () => {
+      const thinkMs = firstContentAt ? firstContentAt - started : Math.max(400, Date.now() - started);
+      asst.thinkMs = thinkMs;
+      if (reasoning) {
+        thinkEl.classList.remove('pending');
+        thinkLabel.textContent = `raciocinou por ${Math.max(1, Math.round(thinkMs / 1000))}s`;
+        if (firstContentAt) thinkEl.classList.remove('open');
+      } else {
+        thinkEl.remove();
+      }
+    };
+
+    try {
+      const res = await fetch(`${base}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+
+      if (res.status >= 400) {
+        const raw = await res.text().catch(() => '');
+        let detail = res.statusText || `HTTP ${res.status}`;
+        try {
+          const parsed = JSON.parse(raw);
+          detail = (parsed.error && (parsed.error.message || parsed.error.code)) || parsed.message || detail;
+        } catch { if (raw) detail = raw.slice(0, 180); }
+        throw new Error(`${res.status} — ${detail}`);
+      }
+
+      if (!res.body || typeof res.body.getReader !== 'function') {
+        throw Object.assign(new Error('streaming indisponível'), { fallback: true });
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let done = false;
+
+      while (!done) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buf += decoder.decode(chunk.value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n')) !== -1) {
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (payload === '[DONE]') { done = true; continue; }
+          let ev;
+          try { ev = JSON.parse(payload); } catch { continue; }
+          const delta = ev.choices && ev.choices[0] && ev.choices[0].delta;
+          if (!delta) continue;
+          if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+            reasoning += delta.reasoning_content;
+            if (!firstContentAt && !thinkEl.classList.contains('open')) thinkEl.classList.add('open');
+            paint();
+          }
+          if (typeof delta.content === 'string' && delta.content) {
+            if (!firstContentAt) {
+              firstContentAt = Date.now();
+              if (reasoning) {
+                thinkEl.classList.remove('open');
+                thinkLabel.textContent = `raciocinou por ${Math.max(1, Math.round((firstContentAt - started) / 1000))}s`;
+              }
+            }
+            content += delta.content;
+            paint();
+          }
+        }
+      }
+      if (!done) {
+        // terminou sem [DONE] — ainda tratamos o que veio
+      }
+    } catch (err) {
+      if (err && err.fallback && !ctrl.signal.aborted) {
+        try {
+          const res = await fetch(`${base}/v1/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...body, stream: false }),
+            signal: ctrl.signal,
+          });
+          const raw = await res.text();
+          let data = null;
+          try { data = JSON.parse(raw); } catch { /* noop */ }
+          if (res.status >= 400 || !data) {
+            let detail = res.statusText || `HTTP ${res.status}`;
+            if (data && data.error) detail = data.error.message || detail;
+            throw new Error(`${res.status} — ${detail}`);
+          }
+          const message = (data.choices && data.choices[0] && data.choices[0].message) || {};
+          reasoning = message.reasoning_content || '';
+          if (reasoning) thinkEl.classList.add('open');
+          content = message.content || '';
+          firstContentAt = Date.now();
+        } catch (inner) {
+          errorText = String(inner.message || inner);
+          reasoning = '';
+          content = '';
+        }
+      } else if (!ctrl.signal.aborted) {
+        errorText = String(err.message || err);
+        reasoning = '';
+        content = '';
+      }
+      // abort: mantém o que já foi pintado
+    } finally {
+      streamingPaint = false;
+      paint(true);
+      finishThink();
+      if (errorText) {
+        contentEl.innerHTML = `<div class="chat-error">✖ ${esc(errorText)}</div>`;
+      } else if (!content && !reasoning && !ctrl.signal.aborted) {
+        contentEl.innerHTML = '<div class="chat-error">(resposta vazia — tente de novo ou escolha outro modelo)</div>';
+      }
+      asst.reasoning = reasoning || null;
+      asst.content = content;
+      asst.ms = Date.now() - started;
+      chat.streaming = false;
+      chat.abort = null;
+      setSendState(false);
+      chatSave();
+      pollStats();
+      pollEvents();
+    }
+  }
+
   // ============================== wiring ==============================
 
   function setPage(page) {
     S.page = page;
+    const contentEl = document.querySelector('.content');
+    if (contentEl) contentEl.classList.toggle('chat-mode', page === 'chat');
     $$('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.page === page));
     $$('.page').forEach((section) => section.classList.toggle('active', section.id === `page-${page}`));
     const [title, sub] = PAGE_META[page] || ['', ''];
     $('#page-title').textContent = title;
     $('#page-sub').textContent = sub;
 
+    if (page === 'chat') {
+      loadChatModels();
+      setTimeout(() => { const input = $('#chat-input'); if (input) input.focus(); }, 60);
+    }
     if (page === 'dashboard') { pollStats(); pollEvents(); renderEvents(); renderDashboard(); }
     if (page === 'models') loadModels(false);
     if (page === 'keys') loadKeys();
@@ -1044,10 +1534,89 @@
       }
     });
 
-    // keyboard: ctrl+1..7 switch pages
+    // ============================== chat ==============================
+
+    $('#chat-composer').addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (chat.streaming) { if (chat.abort) chat.abort.abort(); } else sendChat();
+    });
+    $('#chat-input').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        if (!chat.streaming) sendChat();
+      }
+    });
+    $('#chat-input').addEventListener('input', autoGrow);
+    $('#chat-input').addEventListener('paste', (event) => {
+      const files = event.clipboardData && event.clipboardData.files;
+      if (files && files.length) { event.preventDefault(); addFiles(files); }
+    });
+    $('#btn-chat-attach').addEventListener('click', () => $('#chat-file').click());
+    $('#chat-file').addEventListener('change', (event) => {
+      addFiles(event.target.files);
+      event.target.value = '';
+    });
+    $('#chat-attachments').addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-att]');
+      if (!btn) return;
+      chat.attachments = chat.attachments.filter((a) => a.id !== btn.dataset.att);
+      renderAttachments();
+    });
+    $('#btn-chat-model').addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleModelPop();
+    });
+    $('#chat-model-pop').addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-model]');
+      if (!btn) return;
+      chat.model = btn.dataset.model;
+      renderChatModelName();
+      renderModelPop();
+      toggleModelPop(false);
+      chatSave();
+    });
+    document.addEventListener('click', (event) => {
+      const pop = $('#chat-model-pop');
+      if (pop && !pop.hidden && !event.target.closest('#chat-model-pop') && !event.target.closest('#btn-chat-model')) pop.hidden = true;
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') toggleModelPop(false);
+    });
+    $('#btn-chat-new').addEventListener('click', () => {
+      if (chat.streaming || chat.messages.length === 0) return;
+      if (!window.confirm('Começar uma conversa nova? O histórico atual será limpo.')) return;
+      if (chat.abort) chat.abort.abort();
+      chat.messages = [];
+      renderChatMessages();
+      chatSave();
+    });
+    $('#chat-msgs').addEventListener('click', (event) => {
+      const head = event.target.closest('.think-head');
+      if (head) { head.parentElement.classList.toggle('open'); return; }
+      if (event.target.classList.contains('copy-code')) {
+        const code = event.target.closest('pre').querySelector('code');
+        copyText(code.textContent, 'código');
+      }
+    });
+    const dropZone = $('#page-chat');
+    ['dragover', 'dragenter'].forEach((ev) => dropZone.addEventListener(ev, (event) => {
+      event.preventDefault();
+      dropZone.classList.add('dragging');
+    }));
+    ['dragleave', 'drop'].forEach((ev) => dropZone.addEventListener(ev, (event) => {
+      event.preventDefault();
+      dropZone.classList.remove('dragging');
+    }));
+    dropZone.addEventListener('drop', (event) => {
+      if (event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length) {
+        addFiles(event.dataTransfer.files);
+      }
+    });
+
+    // keyboard: ctrl+1..8 switch pages
     document.addEventListener('keydown', (event) => {
       if (!event.ctrlKey || event.altKey || event.metaKey) return;
-      const pages = ['dashboard', 'models', 'keys', 'network', 'docs', 'settings', 'logs'];
+      const pages = ['chat', 'dashboard', 'models', 'keys', 'network', 'docs', 'settings', 'logs'];
       const index = Number(event.key) - 1;
       if (pages[index]) { event.preventDefault(); setPage(pages[index]); }
     });
@@ -1064,8 +1633,13 @@
     await pollState();
     if (S.state && S.state.tor) { /* chrome rendered inside pollState */ }
     fillSettingsForm();
-    setPage('dashboard');
-    loadModels(false);
+    chatLoad();
+    renderChatModelName();
+    renderAttachments();
+    renderChatMessages();
+    setPage('chat');
+    await loadModels(false);
+    loadChatModels();
     pollStats();
     pollEvents();
 

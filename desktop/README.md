@@ -11,6 +11,7 @@ App desktop (Wails) que embute e supervisiona o **OpenCode Zen Proxy** + **Tor**
 - Roteia o tráfego do proxy para o Zen via SOCKS5 isolado (`127.0.0.1:19050`), com **rotação automática de IP em rate-limit (429)**
 - **Captura de rejeições do upstream**: a última resposta de erro (429/cota) fica gravada com status, headers (`retry-after`) e corpo — `lastRejection` em `/api/stats`, visível nos Logs e no feed de Eventos
 - Dashboard: contadores de tokens por modelo, latência, eventos, histórico de IP
+- **Chat integrado**: interface estilo ChatGPT (texto, imagem, vídeo e áudio), seletor de modelos, raciocínio do modelo visível e streaming com parada — Ctrl+1 na janela
 - API keys opcionais (aplicadas em runtime), exit-nodes por país, logs ao vivo, docs PT-BR
 
 O binário de release já traz uma cópia do proxy embutida (`tools/proxy-src`) — extraída no primeiro run. **Pré-requisito:** Node.js 18+ no PATH.

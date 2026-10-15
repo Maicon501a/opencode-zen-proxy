@@ -58,6 +58,7 @@ Com isso, o proxy:
 - ✅ **Aliases de modelo** — `deepseek-v4.1-flash-free` ou `opencode/deepseek-v4.1-flash-free` ambos funcionam
 - ✅ **Leve** — Um único processo Node com dependências mínimas (express, cors, dotenv)
 - 🖥️ **App desktop (Windows/Linux)** — painel com Tor embutido, estatísticas, chaves e documentação integrada (veja a seção **App Desktop** abaixo)
+- 💬 **Chat integrado no app** — interface limpa estilo ChatGPT: texto, imagem, vídeo e áudio, seletor de modelos com capacidades e raciocínio do modelo visível ao vivo
 - 📊 **Painel & admin API** — contadores de tokens por modelo, feed de eventos e rotação de IP (protegidos por tokens locais gerados a cada execução)
 - 🌐 **Egress opcional via Tor/WARP** — roteia as requisições por SOCKS5 com rotação automática de IP em rate-limit
 
@@ -160,6 +161,7 @@ Além da CLI, o projeto tem um app desktop completo (Wails) que embute o proxy +
 Recursos do app:
 
 - 🧅 **Tor embutido** (Tor Expert Bundle) — liga/desliga com um clique, escolha de exit node e rotação manual/automática de IP em rate-limit
+- 💬 **Chat integrado** — interface limpa estilo ChatGPT no painel: texto, imagem, vídeo e áudio; troque de modelo no compositor e acompanhe o raciocínio do modelo ao vivo
 - 📊 **Painel** — contadores de tokens por modelo, feed de eventos e logs ao vivo
 - 🔑 **Chaves de API opcionais** — gere chaves para exigir autenticação dos clientes, aplicadas em runtime
 - 📖 **Documentação PT-BR integrada** + snippets prontos por modelo (curl, opencode, SDKs)

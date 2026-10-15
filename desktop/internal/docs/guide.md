@@ -19,6 +19,21 @@ Qualquer cliente que aceite uma **base URL OpenAI-compatible** funciona:
 - SDKs oficiais (`openai` python/js) apontando `base_url` para cá
 - `curl`, Postman, scripts
 
+## Chat integrado (aba Chat)
+
+O app traz um chat completo estilo ChatGPT — sem depender de cliente externo:
+
+- **Texto, imagem, vídeo e áudio** — anexe pelo botão `+`, arraste e solte ou cole da área de transferência (PNG/JPG, MP4/WebM, WAV/MP3…; até 20 MB por arquivo, 30 MB por envio)
+- **Seletor de modelos** — todos os gratuitos na lista, com contexto e capacidades (imagem · vídeo · áudio) em cada item; troque a qualquer momento
+- **Raciocínio do modelo ao vivo** — quem pensa (DeepSeek, Space Bunny etc.) mostra o bloco *✦ pensando…*; ao terminar ele colapsa em *raciocinou por Ns* e reabre com um clique
+- **Streaming com botão de parar** — a resposta é escrita conforme chega; o botão de enviar vira ■ para interromper
+- **Histórico local** — a conversa fica salva na sua máquina; *＋ nova conversa* limpa e recomeça
+- **Markdown renderizado** — código com botão copiar, listas, tabelas e citações direto na tela
+
+Atalhos: **Enter** envia, **Shift+Enter** quebra linha, **Ctrl+1** abre o chat.
+
+Tudo passa pelo mesmo proxy local (Tor incluso) — mesmos contadores e feed de eventos do Dashboard.
+
 ## Autenticação (opcional)
 
 Por padrão o proxy é **aberto na sua máquina** — qualquer valor de API key funciona (o client costuma exigir um valor; use `public`).

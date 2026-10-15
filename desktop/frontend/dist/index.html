@@ -18,7 +18,8 @@
     </div>
 
     <nav class="nav" id="nav">
-      <button class="nav-item active" data-page="dashboard"><span class="nav-ico">◧</span>Dashboard</button>
+      <button class="nav-item active" data-page="chat"><span class="nav-ico">✦</span>Chat</button>
+      <button class="nav-item" data-page="dashboard"><span class="nav-ico">◧</span>Dashboard</button>
       <button class="nav-item" data-page="models"><span class="nav-ico">▦</span>Modelos</button>
       <button class="nav-item" data-page="keys"><span class="nav-ico">⚿</span>API Keys</button>
       <button class="nav-item" data-page="network"><span class="nav-ico">⛨</span>Rede &amp; IP</button>
@@ -50,8 +51,44 @@
 
     <div class="content">
 
+      <!-- ============================ CHAT ============================ -->
+      <section class="page chat-page active" id="page-chat">
+        <div class="chat-top">
+          <button class="btn btn-ghost btn-sm" id="btn-chat-new" title="começar uma conversa nova">＋ nova conversa</button>
+        </div>
+
+        <div class="chat-scroll" id="chat-scroll">
+          <div class="chat-empty" id="chat-empty">
+            <div class="chat-hello" id="chat-hello">Olá</div>
+            <div class="chat-hello-sub">texto, imagem, vídeo e áudio — escolha o modelo no compositor e mande ver</div>
+          </div>
+          <div class="chat-msgs" id="chat-msgs"></div>
+        </div>
+
+        <div class="chat-dock">
+          <div class="chat-attachments" id="chat-attachments"></div>
+          <form class="chat-composer" id="chat-composer">
+            <button type="button" class="composer-attach" id="btn-chat-attach" title="anexar imagem, vídeo ou áudio">+</button>
+            <textarea id="chat-input" rows="1" placeholder="Pergunte qualquer coisa…"></textarea>
+            <button type="button" class="composer-model" id="btn-chat-model">
+              <span id="chat-model-name">modelo</span><span class="composer-model-caret">▾</span>
+            </button>
+            <button type="submit" class="composer-send" id="btn-chat-send" title="enviar (Enter) — clique durante a resposta para parar">
+              <span id="chat-send-glyph">↑</span>
+            </button>
+            <input type="file" id="chat-file" accept="image/*,video/*,audio/*" multiple hidden/>
+          </form>
+          <div class="chat-hint">Enter envia · Shift+Enter quebra linha · cole ou arraste imagem, vídeo ou áudio</div>
+
+          <div class="model-pop" id="chat-model-pop" hidden>
+            <div class="model-pop-head">modelo</div>
+            <div class="model-pop-list" id="chat-model-list"></div>
+          </div>
+        </div>
+      </section>
+
       <!-- ============================ DASHBOARD ============================ -->
-      <section class="page active" id="page-dashboard">
+      <section class="page" id="page-dashboard">
         <div class="grid-cards">
           <div class="card stat">
             <div class="stat-label">Requisições</div>
