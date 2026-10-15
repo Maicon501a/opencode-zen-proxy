@@ -281,6 +281,18 @@ function openRequest({ endpoint, headers, body, mode = 'direct', signal, timeout
         ? transport.socksEndpoint()
         : null;
 
+    // Fail closed: when the attempt's mode promises an isolated egress but the
+    // SOCKS endpoint is missing (the desktop app can revoke it mid-flight),
+    // the request must NEVER silently downgrade to the machine's own route —
+    // that would leak the real IP while stats still record the isolated mode.
+    // Surface it as a network failure so the failover chain decides.
+    if (mode !== 'direct' && !socks) {
+      fail(apiError(`${mode} egress unavailable: no SOCKS5 endpoint configured`, 502, {
+        code: 'ECONNREFUSED',
+      }));
+      return;
+    }
+
     if (!socks) {
       send(null);
       return;
@@ -445,7 +457,7 @@ async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
         continue;
       }
 
-      if (mode === 'tor' && rotateBudget > 0 && warp.isNetworkFailure(err)) {
+      if (mode === 'tor' && rotateBudget > 0 && transport.socksEndpoint() != null && warp.isNetworkFailure(err)) {
         rotateBudget -= 1;
         if (await rotateExit(`network failure: ${err.message}`, statsCtx)) {
           rotations += 1;
@@ -782,6 +794,8 @@ module.exports = {
   createChatCompletion,
   createResponse,
   fetchModels,
+  // Test seam: exercised directly by the fail-closed egress tests.
+  openRequest,
   planUpstreamRequest,
   normalizeZenError,
   shapeSuccess,

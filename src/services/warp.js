@@ -1,6 +1,7 @@
 'use strict';
 
 const dns = require('dns');
+const net = require('net');
 const { execFile } = require('child_process');
 const { config } = require('../config/constants');
 const { createLogger } = require('./logger');
@@ -59,6 +60,24 @@ function runWarpCli(args) {
   });
 }
 
+/** TCP-probe a SOCKS listener; rejects when nothing accepts the connection. */
+function probeSocks(host, port, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host, port });
+    let finished = false;
+    const settle = (err) => {
+      if (finished) return;
+      finished = true;
+      socket.destroy();
+      if (err) reject(new Error(`WARP proxy SOCKS ${host}:${port} is not accepting connections (${err.message})`));
+      else resolve();
+    };
+    socket.setTimeout(timeoutMs, () => settle(new Error(`connect timeout after ${timeoutMs}ms`)));
+    socket.once('connect', () => settle());
+    socket.once('error', settle);
+  });
+}
+
 async function ensureWarpReady() {
   if (state.active) return state;
 
@@ -73,6 +92,12 @@ async function ensureWarpReady() {
   if (!/connected/i.test(status)) {
     throw new Error(`WARP did not reach Connected state: ${status}`);
   }
+
+  // `warp-cli status` reports the tunnel, not the local proxy listener: a
+  // client in normal (non-proxy) mode still answers "Connected" while nothing
+  // listens on the SOCKS port. Verify the listener itself before declaring
+  // the egress usable.
+  await probeSocks(config.warpSocksHost, config.warpSocksPort);
 
   state.active = true;
   state.connected = true;
@@ -208,4 +233,6 @@ module.exports = {
   shouldFailover,
   isNetworkFailure,
   resolveHost,
+  // Test seam: verifies a SOCKS listener before the failover trusts it.
+  probeSocks,
 };
