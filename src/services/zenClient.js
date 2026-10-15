@@ -61,7 +61,8 @@ const log = createLogger('zen');
  *        a. TOR (isolated) — when the desktop app points `transport` at its
  *           embedded Tor SOCKS5 listener, every Zen request exits through a
  *           circuit. On 429/502/503/504 the proxy asks the manager for a
- *           FRESH circuit (new exit IP) and replays the request.
+ *           FRESH circuit (new exit IP) and replays, cycling circuits until
+ *           the request passes or the rotate retry policy runs out.
  *        b. WARP           — Cloudflare WARP's SOCKS5 listener, used when no
  *           Tor egress is configured (or as the fallback after a failed
  *           rotation).
@@ -416,6 +417,11 @@ function captureRejection(res, text) {
   };
 }
 
+/** Wait `ms` milliseconds (rotate retry pacing). */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Execute the request with the egress policy described at the top of this
  * file: Tor isolation with circuit rotation (primary), WARP failover
@@ -427,25 +433,50 @@ async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
   const warpEnabled = warp.isEnabled();
   const torAvailable = transport.socksEndpoint() != null;
   const canRotate = torAvailable && transport.hasRotate() && transport.rotateEnabled();
+  const retryPolicy = transport.retryPolicy();
 
   let mode = torAvailable ? 'tor' : (warpEnabled && warp.isActive() ? 'warp' : 'direct');
   let warpTried = mode === 'warp';
-  let rotateBudget = canRotate ? 2 : 0;
   let rotations = 0;
+  let rotateAttempts = 0;
   let rateLimited = false;
-  let lastError = null;
   let lastRejection = null;
   let rateLimitRejection = null;
 
-  const MAX_ATTEMPTS = 6;
+  const retryDeadlineAt = retryPolicy.deadlineMs > 0 ? Date.now() + retryPolicy.deadlineMs : 0;
+  const aborted = () => Boolean(signal && signal.aborted);
+  const abortError = () => apiError('Client aborted the request', 499, { code: 'client_aborted' });
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+  // A burned exit never kills the request while rotation is available: the
+  // proxy keeps asking the manager for fresh circuits and replaying until one
+  // passes. The grind is bounded by the rotate retry policy (env-tunable;
+  // 0 = unbounded) and by the client hanging up.
+  const canRetryRotate = () => canRotate
+    && !aborted()
+    && (retryPolicy.max === 0 || rotateAttempts < retryPolicy.max)
+    && (retryDeadlineAt === 0 || Date.now() < retryDeadlineAt);
+
+  const rotateAndReplay = async (reason) => {
+    while (canRetryRotate()) {
+      rotateAttempts += 1;
+      if (await rotateExit(reason, statsCtx)) {
+        rotations += 1;
+        return true;
+      }
+      // The manager can refuse (circuit cooldown, control port busy): wait a
+      // beat and ask again instead of giving up on the request.
+      await sleep(2000);
+    }
+    return false;
+  };
+
+  for (;;) {
+    if (aborted()) throw abortError();
+
     let res;
     try {
       res = await openRequest({ endpoint, headers, body, mode, signal });
     } catch (err) {
-      lastError = err;
-
       // The client hung up: nothing to retry, and no failover to trigger.
       if (err && err.code === 'client_aborted') throw err;
 
@@ -457,12 +488,12 @@ async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
         continue;
       }
 
-      if (mode === 'tor' && rotateBudget > 0 && transport.socksEndpoint() != null && warp.isNetworkFailure(err)) {
-        rotateBudget -= 1;
-        if (await rotateExit(`network failure: ${err.message}`, statsCtx)) {
-          rotations += 1;
+      if (mode === 'tor' && canRetryRotate() && transport.socksEndpoint() != null && warp.isNetworkFailure(err)) {
+        if (await rotateAndReplay(`network failure: ${err.message}`)) {
+          log.warn('network failure, replaying on fresh circuit', { rotations });
           continue;
         }
+        if (aborted()) throw abortError();
       }
 
       if (mode !== 'warp' && !warpTried && warpEnabled && warp.isNetworkFailure(err)) {
@@ -499,13 +530,12 @@ async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
           message: rejection.message,
         });
 
-        if (mode === 'tor' && rotateBudget > 0) {
-          rotateBudget -= 1;
-          if (await rotateExit(`upstream HTTP ${res.statusCode}`, statsCtx)) {
-            rotations += 1;
-            log.warn('upstream rejection, replaying on fresh circuit', { status: res.statusCode });
+        if (mode === 'tor' && canRetryRotate()) {
+          if (await rotateAndReplay(`upstream HTTP ${res.statusCode}`)) {
+            log.warn('upstream rejection, replaying on fresh circuit', { status: res.statusCode, rotations });
             continue;
           }
+          if (aborted()) throw abortError();
         }
 
         if (mode !== 'warp' && !warpTried && warpEnabled) {
@@ -533,17 +563,6 @@ async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
 
     return { res, egress: mode, rotations, rateLimited, rejection: lastRejection, rateLimitInfo: rateLimitRejection };
   }
-
-  const fallback = lastError
-    ? apiError(`Failed to reach the Zen API: ${lastError.message}`, 502, {
-      code: lastError.code || 'upstream_connection_error',
-    })
-    : apiError('Zen API request failed after egress attempts', 502, { code: 'upstream_unreachable' });
-  fallback.rateLimited = rateLimited;
-  fallback.rotations = rotations;
-  fallback.upstream = lastRejection;
-  fallback.rateLimitInfo = rateLimitRejection;
-  throw fallback;
 }
 
 /** Activate WARP, honouring the cooldown between activation attempts. */

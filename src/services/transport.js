@@ -51,6 +51,17 @@ const state = {
     const parsed = parseInt(process.env.IP_ROTATE_MIN_GAP_MS, 10);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 8000;
   })(),
+  // How long a single request may keep cycling exits while the upstream keeps
+  // rejecting it, and how many fresh circuits it may request while doing so.
+  // 0 disables the bound (grind until the client hangs up).
+  rotateRetryDeadlineMs: (() => {
+    const parsed = parseInt(process.env.IP_ROTATE_RETRY_DEADLINE_MS, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 600000;
+  })(),
+  rotateRetryMax: (() => {
+    const parsed = parseInt(process.env.IP_ROTATE_MAX, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 60;
+  })(),
   busy: false,
   rotateCount: 0,
   lastRotateAt: 0, // last SUCCESSFUL rotation
@@ -87,6 +98,11 @@ function hasRotate() {
 /** True when the automatic rotate-on-rate-limit policy is on. */
 function rotateEnabled() {
   return state.rotateOnRateLimit;
+}
+
+/** Bounds for the rotate-and-replay grind (0 = unbounded). */
+function retryPolicy() {
+  return { deadlineMs: state.rotateRetryDeadlineMs, max: state.rotateRetryMax };
 }
 
 /**
@@ -217,6 +233,7 @@ function status() {
     lastRotateAt: state.lastRotateAt ? new Date(state.lastRotateAt).toISOString() : null,
     lastRotateIp: state.lastRotateIp,
     lastRotateError: state.lastRotateError,
+    retry: retryPolicy(),
   };
 }
 
@@ -238,6 +255,7 @@ module.exports = {
   socksEndpoint,
   hasRotate,
   rotateEnabled,
+  retryPolicy,
   parseSocks,
   reset,
 };
