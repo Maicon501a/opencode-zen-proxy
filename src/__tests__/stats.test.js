@@ -130,6 +130,32 @@ describe('request aggregation', () => {
     expect(snap.events[0].message).toBe('slow down');
   });
 
+  it('keeps the last upstream rejection (status, headers, body)', () => {
+    const { stats } = loadStats();
+    const ctx = stats.beginRequest({ model: 'x', wireModel: 'm2' });
+    const event = stats.endRequest(ctx, {
+      ok: false,
+      status: 429,
+      error: 'daily free tier quota reached',
+      rateLimited: true,
+      rateLimit: {
+        status: 429,
+        statusMessage: 'Too Many Requests',
+        retryAfter: '120',
+        message: 'daily free tier quota reached',
+        headers: { 'retry-after': '120', 'content-type': 'application/json' },
+        body: '{"error":{"message":"daily free tier quota reached"}}',
+      },
+    });
+
+    expect(event.upstream.status).toBe(429);
+    const snap = stats.snapshot();
+    expect(snap.lastRejection.model).toBe('m2');
+    expect(snap.lastRejection.rateLimited).toBe(true);
+    expect(snap.lastRejection.retryAfter).toBe('120');
+    expect(snap.lastRejection.body).toContain('quota reached');
+  });
+
   it('filters events by id and limits the count', () => {
     const { stats } = loadStats();
     for (let i = 0; i < 5; i += 1) {

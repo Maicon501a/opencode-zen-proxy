@@ -131,7 +131,7 @@ describe('egress isolation with rotation on rate limit', () => {
 
           if (zenFailOnce) {
             zenFailOnce = false;
-            res.writeHead(429, { 'Content-Type': 'application/json' });
+            res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '30' });
             res.end(JSON.stringify({ type: 'error', error: { type: 'RateLimited', message: 'slow down' } }));
             return;
           }
@@ -235,6 +235,16 @@ describe('egress isolation with rotation on rate limit', () => {
     const requestEvent = snapshot.events.find((event) => event.type === 'request');
     expect(requestEvent.egress).toBe('tor');
     expect(requestEvent.rateLimited).toBe(true);
+
+    // ---- the 429 body, headers and message were captured for inspection ----
+    expect(snapshot.lastRejection).toBeTruthy();
+    expect(snapshot.lastRejection.status).toBe(429);
+    expect(snapshot.lastRejection.model).toBe('deepseek-v4.1-flash-free');
+    expect(snapshot.lastRejection.retryAfter).toBe('30');
+    expect(snapshot.lastRejection.message).toBe('slow down');
+    expect(snapshot.lastRejection.body).toContain('slow down');
+    expect(snapshot.lastRejection.headers['content-type']).toContain('application/json');
+    expect(requestEvent.upstream.status).toBe(429);
   });
 
   it('does not rotate when the upstream is healthy', async () => {

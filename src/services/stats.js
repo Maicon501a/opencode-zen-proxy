@@ -53,6 +53,7 @@ const state = {
   daily: {},
   events: [],
   nextEventId: 1,
+  lastRejection: null,
 };
 
 let flushTimer = null;
@@ -98,6 +99,9 @@ function load() {
     if (parsed.byModel && typeof parsed.byModel === 'object') state.byModel = parsed.byModel;
     if (parsed.byKey && typeof parsed.byKey === 'object') state.byKey = parsed.byKey;
     if (parsed.daily && typeof parsed.daily === 'object') state.daily = parsed.daily;
+    if (parsed.lastRejection && typeof parsed.lastRejection === 'object') {
+      state.lastRejection = parsed.lastRejection;
+    }
     if (Array.isArray(parsed.events)) {
       state.events = parsed.events.slice(-MAX_EVENTS);
       state.nextEventId = state.events.reduce((max, event) => Math.max(max, event.id || 0), 0) + 1;
@@ -200,6 +204,8 @@ function beginRequest({ model, wireModel, clientFormat, upstreamFormat, stream, 
  * @param {'direct'|'tor'|'warp'} [outcome.egress]
  * @param {number}  [outcome.rotations]
  * @param {boolean} [outcome.rateLimited]
+ * @param {object}  [outcome.rateLimit] captured rejected response (rate limit)
+ * @param {object}  [outcome.upstream]  captured rejected response (any 4xx/5xx)
  * @param {boolean} [outcome.aborted]
  */
 function endRequest(ctx, outcome = {}) {
@@ -220,6 +226,19 @@ function endRequest(ctx, outcome = {}) {
   if (outcome.rateLimited) state.totals.rateLimits += 1;
   if (outcome.rotations) state.totals.rotations += outcome.rotations;
   if (outcome.aborted) state.totals.aborted += 1;
+
+  // Keep the last rejected upstream response around (status, headers, body)
+  // so rate limits and free-tier quota notices stay inspectable after the
+  // retry already succeeded on a fresh circuit.
+  const rejection = outcome.rateLimit || outcome.upstream || null;
+  if (rejection && typeof rejection === 'object') {
+    state.lastRejection = {
+      at: rejection.at || nowIso(),
+      model,
+      rateLimited: outcome.rateLimited === true,
+      ...rejection,
+    };
+  }
 
   // ---- per model ----
   const entry = state.byModel[model] || {
@@ -278,6 +297,7 @@ function endRequest(ctx, outcome = {}) {
     egress: outcome.egress || null,
     rotations: outcome.rotations || 0,
     rateLimited: outcome.rateLimited === true,
+    upstream: rejection,
     aborted: outcome.aborted === true,
     key: ctx.keyName || null,
     message: outcome.error || null,
@@ -317,6 +337,7 @@ function snapshot() {
     daily: Object.entries(state.daily)
       .map(([day, bucket]) => ({ day, ...bucket }))
       .sort((a, b) => (a.day < b.day ? -1 : 1)),
+    lastRejection: state.lastRejection || null,
     events: state.events.slice(),
     nextEventId: state.nextEventId,
   };
@@ -336,6 +357,7 @@ function reset() {
   state.daily = {};
   state.events = [];
   state.nextEventId = 1;
+  state.lastRejection = null;
   state.bootedAt = nowIso();
   dirty = true;
   flush();

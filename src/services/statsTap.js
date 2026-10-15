@@ -67,8 +67,16 @@ function tapSseUsage(upstream, { onEnd } = {}) {
                   ) {
                     usage = event.response.usage;
                   }
+                  if (event.error && typeof event.error === 'object') {
+                    const detail = event.error.message || event.error.code || event.error.type;
+                    if (detail) errorMessage = String(detail).slice(0, 300);
+                  }
                   if (event.type === 'response.failed' || event.type === 'error') {
-                    errorMessage = 'upstream stream reported an error event';
+                    const responseError = event.response && event.response.error;
+                    const detail = responseError && (responseError.message || responseError.code);
+                    errorMessage = detail
+                      ? String(detail).slice(0, 300)
+                      : (errorMessage || 'upstream stream reported an error event');
                   }
                 }
               } catch {

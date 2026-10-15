@@ -185,8 +185,9 @@
       return parts.join(' ');
     }
     if (ev.type === 'key') return `key ${ev.action || ''} ${ev.key ? `· ${ev.key}` : ''}`;
-    if (ev.type === 'error') return ev.message || ev.error || 'erro';
-    return ev.model || 'requisição';
+    const upstreamMsg = ev.upstream && ev.upstream.message ? ` · ${ev.upstream.message}` : '';
+    if (ev.type === 'error') return `${ev.message || ev.error || 'erro'}${upstreamMsg}`;
+    return `${ev.model || 'requisição'}${upstreamMsg}`;
   }
 
   function eventSide(ev) {
@@ -200,6 +201,7 @@
     }
     if (ev.egress) parts.push(esc(ev.egress));
     if (ev.rotations) parts.push(`${ev.rotations} gira`);
+    if (ev.upstream && ev.upstream.retryAfter) parts.push(`retry-after ${esc(String(ev.upstream.retryAfter))}`);
     return parts.join(' · ');
   }
 
@@ -212,10 +214,11 @@
     }
     const rows = S.events.slice(-80).reverse().map((ev) => {
       const [cls, tag] = eventTag(ev);
+      const tip = ev.upstream && ev.upstream.body ? `${eventText(ev)}\n\n${ev.upstream.body}` : eventText(ev);
       return `<div class="feed-item">
         <span class="feed-time">${esc(fmtTime(ev.ts))}</span>
         <span class="feed-tag ${cls}">${tag}</span>
-        <span class="feed-main" title="${esc(eventText(ev))}">${esc(eventText(ev))}</span>
+        <span class="feed-main" title="${esc(tip)}">${esc(eventText(ev))}</span>
         <span class="feed-side">${eventSide(ev)}</span>
       </div>`;
     });

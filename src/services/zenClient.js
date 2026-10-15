@@ -350,12 +350,66 @@ async function rotateExit(reason, statsCtx) {
   return false;
 }
 
+const CAPTURE_BODY_LIMIT = 2048;
+const CAPTURE_HEADER_LIMIT = 300;
+
+function truncate(value, limit) {
+  const text = String(value == null ? '' : value);
+  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+/**
+ * Best-effort human message from an upstream error body (JSON envelopes from
+ * the gateway and plain-text responses both end up readable).
+ */
+function upstreamErrorMessage(text) {
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object') {
+      const nested = parsed.error && typeof parsed.error === 'object'
+        ? (parsed.error.message || parsed.error.type || parsed.error.code)
+        : parsed.error;
+      const candidate = nested || parsed.message;
+      if (typeof candidate === 'string' && candidate !== '') {
+        return truncate(candidate.replace(/\s+/g, ' ').trim(), 300);
+      }
+    }
+  } catch {
+    // not JSON — fall through to the raw body
+  }
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat ? truncate(flat, 300) : null;
+}
+
+/**
+ * Snapshot of a rejected upstream response (status + headers + bounded body).
+ * Rate limits and free-tier quota notices land here so they can be inspected
+ * later from the dashboard instead of vanishing with the retry.
+ */
+function captureRejection(res, text) {
+  const headers = {};
+  for (const [name, value] of Object.entries(res.headers || {})) {
+    if (value == null) continue;
+    headers[name] = truncate(Array.isArray(value) ? value.join(', ') : value, CAPTURE_HEADER_LIMIT);
+  }
+  return {
+    status: res.statusCode,
+    statusMessage: res.statusMessage || null,
+    at: new Date().toISOString(),
+    message: upstreamErrorMessage(text),
+    retryAfter: headers['retry-after'] || null,
+    headers,
+    body: truncate(text || '', CAPTURE_BODY_LIMIT),
+  };
+}
+
 /**
  * Execute the request with the egress policy described at the top of this
  * file: Tor isolation with circuit rotation (primary), WARP failover
  * (fallback), direct route (last resort).
  *
- * @returns {Promise<{res: import('http').IncomingMessage, egress: string, rotations: number, rateLimited: boolean}>}
+ * @returns {Promise<{res: import('http').IncomingMessage, egress: string, rotations: number, rateLimited: boolean, rejection: object|null, rateLimitInfo: object|null}>}
  */
 async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
   const warpEnabled = warp.isEnabled();
@@ -368,6 +422,8 @@ async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
   let rotations = 0;
   let rateLimited = false;
   let lastError = null;
+  let lastRejection = null;
+  let rateLimitRejection = null;
 
   const MAX_ATTEMPTS = 6;
 
@@ -412,14 +468,24 @@ async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
       wrapped.egress = mode;
       wrapped.rateLimited = rateLimited;
       wrapped.rotations = rotations;
+      wrapped.upstream = lastRejection;
+      wrapped.rateLimitInfo = rateLimitRejection;
       throw wrapped;
     }
 
     if (res.statusCode >= 400) {
       const text = await readBody(res).catch(() => '');
+      const rejection = captureRejection(res, text);
+      lastRejection = rejection;
 
       if (warp.shouldFailover(res.statusCode, text)) {
         rateLimited = true;
+        rateLimitRejection = rejection;
+        log.warn('rate limit / quota response captured', {
+          status: rejection.status,
+          retryAfter: rejection.retryAfter,
+          message: rejection.message,
+        });
 
         if (mode === 'tor' && rotateBudget > 0) {
           rotateBudget -= 1;
@@ -448,10 +514,12 @@ async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
       error.egress = mode;
       error.rateLimited = rateLimited;
       error.rotations = rotations;
+      error.upstream = rejection;
+      error.rateLimitInfo = rateLimitRejection;
       throw error;
     }
 
-    return { res, egress: mode, rotations, rateLimited };
+    return { res, egress: mode, rotations, rateLimited, rejection: lastRejection, rateLimitInfo: rateLimitRejection };
   }
 
   const fallback = lastError
@@ -461,6 +529,8 @@ async function sendWithFailover({ endpoint, headers, body, signal, statsCtx }) {
     : apiError('Zen API request failed after egress attempts', 502, { code: 'upstream_unreachable' });
   fallback.rateLimited = rateLimited;
   fallback.rotations = rotations;
+  fallback.upstream = lastRejection;
+  fallback.rateLimitInfo = rateLimitRejection;
   throw fallback;
 }
 
@@ -583,11 +653,13 @@ async function forward(payload, clientFormat, options = {}) {
       egress: err.egress || null,
       rotations: err.rotations || 0,
       rateLimited: err.rateLimited === true,
+      rateLimit: err.rateLimitInfo || null,
+      upstream: err.upstream || null,
     });
     throw err;
   }
 
-  const { res, egress, rotations, rateLimited } = shipped;
+  const { res, egress, rotations, rateLimited, rejection, rateLimitInfo } = shipped;
   log.debug('upstream response', { status: res.statusCode, egress, rotations });
 
   let shaped;
@@ -608,6 +680,8 @@ async function forward(payload, clientFormat, options = {}) {
       egress,
       rotations,
       rateLimited,
+      rateLimit: rateLimitInfo,
+      upstream: rejection,
     });
     throw err;
   }
@@ -621,6 +695,8 @@ async function forward(payload, clientFormat, options = {}) {
       egress,
       rotations,
       rateLimited,
+      rateLimit: rateLimitInfo,
+      upstream: rejection,
     });
     return { ...shaped, wireModel: plan.wireModel, clientFormat };
   }
@@ -638,6 +714,8 @@ async function forward(payload, clientFormat, options = {}) {
         egress,
         rotations,
         rateLimited,
+        rateLimit: rateLimitInfo,
+        upstream: rejection,
         aborted: info.aborted,
         error: info.error || null,
       });
