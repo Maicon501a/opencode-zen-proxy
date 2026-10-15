@@ -865,6 +865,7 @@
         messages: chat.messages.slice(-80).map((m) => ({
           role: m.role,
           content: m.content || '',
+          reasoning: m.reasoning ? String(m.reasoning).slice(0, 8000) : null,
           thinkMs: m.thinkMs || null,
           ms: m.ms || null,
         })),
