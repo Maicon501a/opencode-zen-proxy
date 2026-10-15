@@ -1,19 +1,36 @@
-# README
+# OpenCode Zen — Desktop
 
-## About
+App desktop (Wails) que embute e supervisiona o **OpenCode Zen Proxy** + **Tor**, com painel de estatísticas, gerenciador de API keys, rotação de IP e documentação integrada.
 
-This is the official Wails Vanilla template.
+> A documentação completa do projeto (proxy, gate, modelos e limites) está no [README da raiz](../README.md).
 
-You can configure the project by editing `wails.json`. More information about the project settings can be found
-here: https://wails.io/docs/reference/project-config
+## O que ele faz
 
-## Live Development
+- Sobe o proxy Node automaticamente (`node src/index.js`) e captura os logs em tempo real
+- Extrai e roda um **Tor Expert Bundle** embutido (sem Tor Browser) — `torwin/` no Windows, `torlinux/` no Linux (libs `.so` carregadas via `LD_LIBRARY_PATH`)
+- Roteia o tráfego do proxy para o Zen via SOCKS5 isolado (`127.0.0.1:19050`), com **rotação automática de IP em rate-limit (429)**
+- Dashboard: contadores de tokens por modelo, latência, eventos, histórico de IP
+- API keys opcionais (aplicadas em runtime), exit-nodes por país, logs ao vivo, docs PT-BR
 
-To run in live development mode, run `wails dev` in the project directory. This will run a Vite development
-server that will provide very fast hot reload of your frontend changes. If you want to develop in a browser
-and have access to your Go methods, there is also a dev server that runs on http://localhost:34115. Connect
-to this in your browser, and you can call your Go code from devtools.
+O binário de release já traz uma cópia do proxy embutida (`tools/proxy-src`) — extraída no primeiro run. **Pré-requisito:** Node.js 18+ no PATH.
 
-## Building
+## Rodar
 
-To build a redistributable, production mode package, use `wails build`.
+Baixe o build pronto em [Releases](https://github.com/Maicon501a/opencode-zen-proxy/releases):
+
+- `OpenCodeZenDesktop-windows-amd64.zip` → extraia e rode `OpenCodeZenDesktop.exe`
+- `OpenCodeZenDesktop-linux-amd64.tar.gz` → extraia e rode `./OpenCodeZenDesktop` (requer `libwebkit2gtk-4.1`)
+
+O painel também abre no navegador em `http://127.0.0.1:46998/`.
+
+## Compilar
+
+Requer Go 1.25+ e [Wails v2.13](https://wails.io):
+
+```bash
+cd desktop
+wails build -clean                   # Windows
+wails build -clean -tags webkit2_41  # Linux (libgtk-3-dev + libwebkit2gtk-4.1-dev)
+```
+
+O CI (`.github/workflows/build.yml`) faz esses dois builds a cada push e publica os artefatos em tags `v*`.
