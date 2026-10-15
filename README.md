@@ -152,7 +152,7 @@ Além da CLI, o projeto tem um app desktop completo (Wails) que embute o proxy +
 
 **Download:** o GitHub Actions compila e publica os binários em [Releases](https://github.com/Maicon501a/opencode-zen-proxy/releases):
 
-- `OpenCodeZenDesktop-windows-amd64.zip` — extraia e rode `OpenCodeZenDesktop.exe`
+- `OpenCodeZenDesktop-windows-amd64.exe` — baixe e execute **direto**, sem extrair (ou o `.zip`, se preferir)
 - `OpenCodeZenDesktop-linux-amd64.tar.gz` — extraia e rode `./OpenCodeZenDesktop` (requer `libwebkit2gtk-4.1` instalado)
 
 **Pré-requisito:** [Node.js](https://nodejs.org/) 18+ no PATH — o app supervisiona o processo Node, e a cópia do proxy já vem embutida no binário.

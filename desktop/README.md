@@ -19,7 +19,8 @@ O binário de release já traz uma cópia do proxy embutida (`tools/proxy-src`) 
 
 Baixe o build pronto em [Releases](https://github.com/Maicon501a/opencode-zen-proxy/releases):
 
-- `OpenCodeZenDesktop-windows-amd64.zip` → extraia e rode `OpenCodeZenDesktop.exe`
+- `OpenCodeZenDesktop-windows-amd64.exe` → baixe e execute direto (sem extrair)
+- `OpenCodeZenDesktop-windows-amd64.zip` → alternativa compactada (20 MB vs 54 MB)
 - `OpenCodeZenDesktop-linux-amd64.tar.gz` → extraia e rode `./OpenCodeZenDesktop` (requer `libwebkit2gtk-4.1`)
 
 O painel também abre no navegador em `http://127.0.0.1:46998/`.

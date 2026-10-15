@@ -100,6 +100,8 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Compress-Archive -Path desktop/build/bin/OpenCodeZenDesktop.exe `
             -DestinationPath dist/OpenCodeZenDesktop-windows-amd64.zip
+          Copy-Item desktop/build/bin/OpenCodeZenDesktop.exe `
+            dist/OpenCodeZenDesktop-windows-amd64.exe
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
@@ -137,6 +139,17 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+          body: |
+            ## Downloads
+
+            | Plataforma | Arquivo | Como usar |
+            |---|---|---|
+            | Windows | `OpenCodeZenDesktop-windows-amd64.exe` | baixe e execute direto — sem extrair |
+            | Windows | `OpenCodeZenDesktop-windows-amd64.zip` | descompacte e execute o `OpenCodeZenDesktop.exe` |
+            | Linux | `OpenCodeZenDesktop-linux-amd64.tar.gz` | `tar -xzf` e execute `./OpenCodeZenDesktop` (requer `libwebkit2gtk-4.1`) |
+            | Qualquer | `proxy-source.zip` | proxy Node puro, sem o app (`npm install && npm start`) |
+
+            **Pré-requisito:** Node.js 18+ no PATH — o app sobe o proxy embutido com ele.
 
       - name: Attach proxy source zip to the release
         run: |
