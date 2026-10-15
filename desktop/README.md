@@ -9,6 +9,7 @@ App desktop (Wails) que embute e supervisiona o **OpenCode Zen Proxy** + **Tor**
 - Sobe o proxy Node automaticamente (`node src/index.js`) e captura os logs em tempo real
 - Extrai e roda um **Tor Expert Bundle** embutido (sem Tor Browser) — `torwin/` no Windows, `torlinux/` no Linux (libs `.so` carregadas via `LD_LIBRARY_PATH`)
 - Roteia o tráfego do proxy para o Zen via SOCKS5 isolado (`127.0.0.1:19050`), com **rotação automática de IP em rate-limit (429)**
+- **Captura de rejeições do upstream**: a última resposta de erro (429/cota) fica gravada com status, headers (`retry-after`) e corpo — `lastRejection` em `/api/stats`, visível nos Logs e no feed de Eventos
 - Dashboard: contadores de tokens por modelo, latência, eventos, histórico de IP
 - API keys opcionais (aplicadas em runtime), exit-nodes por país, logs ao vivo, docs PT-BR
 

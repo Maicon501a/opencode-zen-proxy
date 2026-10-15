@@ -218,6 +218,8 @@ curl http://localhost:3000/v1/chat/completions \
 
 Para base64, use `"url": "data:image/png;base64,..."`. O proxy também normaliza `image_url` enviado como string e partes `input_image` usadas por clientes compatíveis com a Responses API. Modelos somente texto rejeitam imagens; consulte `supportsVision` em `GET /v1/models/free`.
 
+**Vídeo e áudio** seguem o mesmo padrão, com as partes `video_url` (`{"type":"video_url","video_url":{"url":"data:video/mp4;base64,..."}}`) e `input_audio` (`{"type":"input_audio","input_audio":{"data":"<base64>","format":"wav"}}`). Verificados ao vivo em `mimo-v2.6` (imagem + vídeo + áudio), `space-bunny` e `step-5` (vídeo) — tabela completa por modelo em [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
+
 ### 2. Tool Calling (chamadas de função)
 
 Esta é a funcionalidade que faz agentes de IA funcionarem. O modelo recebe as ferramentas disponíveis e decide quando chamá-las:
@@ -373,23 +375,25 @@ Resultado: o agente (ex: Kilo Code) nunca recebia os `tool_calls`, ficando trava
 
 Os modelos do tier gratuito, acessíveis com o token `public` (limites oficiais do catálogo Zen):
 
-| ID do Modelo | Nome | Contexto | Saída máx. | Tools | Vision |
-|---|---|--:|--:|:--:|:--:|
-| `opencode/deepseek-v4.1-flash-free` | DeepSeek V4.1 Flash Free | 200.000 | 32.000 | ✅ | ✅ |
-| `opencode/space-bunny-free` | Space Bunny Free | 1.048.576 | 524.288 | ✅ | ✅ |
-| `opencode/cat-jam-free` | Cat Jam Free | 262.144 | 131.072 | ✅ | — |
-| `opencode/mimo-v2.6-flash-free` | MiMo V2.6 Flash Free | 200.000 | 32.000 | ✅ | ✅ |
-| `opencode/nemotron-3.5-lightning-free` | Nemotron 3.5 Lightning Free | 262.144 | 262.144 | ✅ | — |
-| `opencode/nemotron-3.5-super-vl-free` | Nemotron 3.5 Super VL Free | 1.048.576 | 131.072 | ✅ | ✅ |
-| `opencode/step-5-preview-free` | Step 5 Preview Free | 1.000.000 | 65.536 | ✅ | ✅ |
-| `opencode/longcat-2.5-preview-free` | LongCat 2.5 Preview Free | 1.000.000 | 131.072 | ✅ | ✅ |
-| `opencode/big-pickle` | Big Pickle | 200.000 | 32.000 | ✅ | — |
-| `opencode/muse-spark-1.3-contributor-free` | Muse Spark 1.3 Free | 1.048.576 | 131.072 | ✅ | ✅ |
-| `opencode/muse-spark-1.2-contributor-free` | Muse Spark 1.2 Free | 1.048.576 | 131.072 | ✅ | ✅ |
+| ID do Modelo | Nome | Contexto | Saída máx. | Tools | Vision | Vídeo | Áudio |
+|---|---|--:|--:|:--:|:--:|:--:|:--:|
+| `opencode/deepseek-v4.1-flash-free` | DeepSeek V4.1 Flash Free | 200.000 | 32.000 | ✅ | ✅ | — | — |
+| `opencode/space-bunny-free` | Space Bunny Free | 1.048.576 | 524.288 | ✅ | ✅ | ✅ | — |
+| `opencode/cat-jam-free` | Cat Jam Free | 262.144 | 131.072 | ✅ | — | — | — |
+| `opencode/mimo-v2.6-flash-free` | MiMo V2.6 Flash Free | 200.000 | 32.000 | ✅ | ✅ | ✅ | ✅ |
+| `opencode/nemotron-3.5-lightning-free` | Nemotron 3.5 Lightning Free | 262.144 | 262.144 | ✅ | — | — | — |
+| `opencode/nemotron-3.5-super-vl-free` | Nemotron 3.5 Super VL Free | 1.048.576 | 131.072 | ✅ | ✅ | — | — |
+| `opencode/step-5-preview-free` | Step 5 Preview Free | 1.000.000 | 65.536 | ✅ | ✅ | ✅ | — |
+| `opencode/longcat-2.5-preview-free` | LongCat 2.5 Preview Free | 1.000.000 | 131.072 | ✅ | ✅ | — | — |
+| `opencode/big-pickle` | Big Pickle | 200.000 | 32.000 | ✅ | — | — | — |
+| `opencode/muse-spark-1.3-contributor-free` | Muse Spark 1.3 Free | 1.048.576 | 131.072 | ✅ | ✅ | ✅ | ✅ |
+| `opencode/muse-spark-1.2-contributor-free` | Muse Spark 1.2 Free | 1.048.576 | 131.072 | ✅ | ✅ | ✅ | ✅ |
 
 Você pode usar **aliases curtos** omitindo o prefixo `opencode/` (ex: `deepseek-v4.1-flash-free`, `space-bunny`, `muse-spark-1.3`).
 
 > O conjunto exato de modelos depende do que o Zen expõe no momento. Rode `curl http://localhost:3000/v1/models` para ver a lista atualizada (vinda direto do Zen — 87 modelos no catálogo, 11 gratuitos).
+
+> **Capacidades verificadas ao vivo (15/10/2026):** tool calling (não-stream e stream), visão, **vídeo** e **áudio** testados ponta-a-ponta pelo proxy via Tor — 20/21 respostas OK de primeira (+1 retry após 429 de capacidade). Matriz por modelo, exemplos de payload e a captura de rejeições: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
 
 > **Atenção ao reasoning:** O `deepseek-v4.1-flash-free` é um modelo de raciocínio. Ele emite o chain-of-thought (raciocínio) através do campo `reasoning_content` (estilo DeepSeek). Use um `max_tokens` generoso (ex: 500+) para que ele tenha espaço tanto para pensar quanto para responder.
 
@@ -523,10 +527,17 @@ Este proxy preserva o **function calling nativo**. O `opencode serve` intercepta
 **Como controlo o quanto o modelo "pensa"?**
 Use o campo `reasoning_effort` na requisição: `low`, `high` ou `max` (valores como `medium`/`xhigh` são mapeados automaticamente). Por padrão o proxy usa `high`. Mude o padrão global com a variável `DEFAULT_REASONING_EFFORT`. Veja a seção [Controlando o Esforço de Raciocínio](#3-controlando-o-esforço-de-raciocínio-reasoning_effort).
 
+**Os modelos aceitam imagem, vídeo e áudio?**
+Sim — conforme o modelo. Verificado ao vivo em 15/10/2026: visão em `mimo-v2.6`, `deepseek-v4.1`, `nemotron-3.5-super-vl` e `space-bunny`; vídeo em `space-bunny`, `step-5` e `mimo-v2.6`; áudio em `mimo-v2.6`. Envie as partes `image_url`, `video_url` e `input_audio` (data URI base64 funciona). Matriz completa por modelo: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
+
+**O que é o `lastRejection` no `/api/stats`?**
+É a captura da última rejeição do upstream (ex.: 429): status, headers completos, `retry-after`, mensagem parseada e corpo (até 2KB). Também aparece nos Logs e no feed de Eventos do app desktop, no momento em que acontece. Serve para ler a mensagem exata do Zen quando a cota diária do tier gratuito estourar.
+
 ---
 
 ## 📚 Documentação Adicional
 
+- [Compatibilidade & Capacidades Verificadas](docs/COMPATIBILIDADE.md) — Matriz de tools/visão/vídeo/áudio testados ao vivo, exemplos de payload e a captura de rejeições 429
 - [Análise Técnica de Engenharia Reversa](docs/REVERSE_ENGINEERING.md) — Documento completo sobre como a API Zen funciona internamente
 - [Documentação do OpenCode Zen](https://opencode.ai/docs/zen/)
 - [Referência da API OpenAI](https://platform.openai.com/docs/api-reference)

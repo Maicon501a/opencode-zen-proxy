@@ -555,6 +555,17 @@ after the port: 8/10 free chat models returned 200 through the proxy
 (`step-5-preview-free` was a 429 upstream capacity error and `jev-1.13-free`
 reports `ModelProtocolUnsupported` on chat — both upstream-side, not gate).
 
+**Live capability pass (October 15, 2026):** all 11 free models answered `200`
+through the proxy (20/21 first pass; the single failure was `step-5-preview-free`
+video mode returning a 429 capacity error —
+`{"error":{"type":"server_error","message":"Upstream request failed: Endpoint is unavailable."}}`
+with `cf-placement: remote-ORD` — which succeeded on retry). Tool calling
+(stream and non-stream), image, video and audio inputs all passed end-to-end.
+That rejection was captured live by the proxy's `lastRejection` recorder
+(status, headers, retry-after, body up to 2KB — surfaced in the desktop logs,
+event feed and stats snapshot). Full matrix and evidence:
+`docs/COMPATIBILIDADE.md`.
+
 ---
 
 ## References

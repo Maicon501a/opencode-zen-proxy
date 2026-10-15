@@ -62,6 +62,8 @@ Valores oficiais da catalogação **models.dev** (a mesma fonte que o cliente of
 
 O prefixo `opencode/` é opcional em todos: `deepseek-v4.1-flash-free` funciona igual. Aliases curtos também funcionam (`deepseek-v4.1`, `cat-jam`, `step-5`, ...), inclusive com sufixo de esforço (`-low`, `-high`, `-max`).
 
+> **Capacidades verificadas ao vivo (15/10/2026):** tool calling (não-stream e stream), visão, vídeo e áudio — todos passaram pelo proxy via Tor (20/21 de primeira, +1 retry após 429 de capacidade). Detalhes e exemplos: `docs/COMPATIBILIDADE.md` no repositório.
+
 ## Configurar no OpenCode (provider custom)
 
 Adicione no seu `opencode.json`:
@@ -143,6 +145,30 @@ curl http://127.0.0.1:3000/v1/responses \
   }'
 ```
 
+Visão (imagem base64):
+
+```bash
+curl http://127.0.0.1:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "opencode/mimo-v2.6-flash-free",
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "Descreva a imagem."},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,<...>"}}
+      ]
+    }]
+  }'
+```
+
+Vídeo e áudio (partes adicionais, modelos compatíveis):
+
+```json
+{"type": "video_url", "video_url": {"url": "data:video/mp4;base64,<...>"}}
+{"type": "input_audio", "input_audio": {"data": "<base64>", "format": "wav"}}
+```
+
 ## Reasoning effort
 
 Os modelos gratuitos **sempre pensam**. O proxy aceita e traduz o vocabulário:
@@ -163,6 +189,8 @@ Quando o Zen responde **rate-limit** (429) para esse IP:
 3. **Repete a requisição** no circuito novo — automaticamente, sem você ver o erro
 
 O botão **Novo IP** força o mesmo ciclo manualmente. O toggle desliga o isolamento (o tráfego sai direto) sem parar o proxy. Se você desligar também o *Rotacionar em rate-limit*, um 429 chega ao cliente.
+
+Quando um 429 acontece, a resposta de erro **não é descartada**: o proxy grava status, headers (incluindo `retry-after`) e o corpo da resposta. A captura aparece na hora nos *Logs* (`rate limit / quota response captured`) e o último fica em `lastRejection` (visível no Dashboard e em `/admin/stats`) — é assim que você lê a mensagem exata do Zen quando a cota diária do tier gratuito estoura.
 
 ## API Keys (opcional)
 
@@ -186,7 +214,7 @@ Os dados ficam em `stats.json` na pasta de dados do app e sobrevivem a reinício
 
 ## Solução de problemas
 
-- **429 persistente**: o circuito novo pode cair no mesmo exit. Clique *Novo IP* ou aguarde o cooldown (~10s).
+- **429 persistente**: o circuito novo pode cair no mesmo exit. Clique *Novo IP* ou aguarde o cooldown (~10s). A mensagem exata do último 429 fica capturada (Logs + `lastRejection`) — ajuda a distinguir **cota diária** de **capacidade** ("Endpoint is unavailable").
 - **Tor não sobe**: primeira subida baixa o consenso da rede (~30-90s). Veja os *Logs*.
 - **Modelo indisponível**: alguns modelos são aposentados sem aviso. Use `/v1/models` para ver o que está vivo.
 - **Sobre dados**: os modelos gratuitos do Zen podem coletar uso para melhoria. Evite enviar dados sensíveis.

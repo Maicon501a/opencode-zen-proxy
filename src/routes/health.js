@@ -85,6 +85,12 @@ router.get('/docs', (_req, res) => {
         aliasSuffixes: ['-low', '-high', '-max'],
         example: 'opencode/space-bunny-free-max',
       },
+      'Media input': {
+        image: { type: 'image_url', image_url: { url: 'data:image/png;base64,... or https URL' } },
+        video: { type: 'video_url', video_url: { url: 'data:video/mp4;base64,...' } },
+        audio: { type: 'input_audio', input_audio: { data: '<base64>', format: 'wav' } },
+        models: 'mimo-v2.6 (image/audio/video) · space-bunny & step-5 (image/video) · muse 1.2/1.3 (image/video/audio/pdf)',
+      },
     },
     authentication: 'Keyless. The proxy presents itself as the official OpenCode CLI and forwards "public" to Zen.',
     freeModels: FREE_MODELS.map((model) => model.id),
@@ -92,6 +98,7 @@ router.get('/docs', (_req, res) => {
       'The Zen free-tier gate requires streamed requests; non-streaming clients get the folded SSE back as one JSON object.',
       'Muse Spark free models are Responses-only and are translated automatically for chat clients.',
       'Zen rate-limits by egress IP. On 429/502/503/504 (or a gateway 500) the proxy retries once through Cloudflare WARP.',
+      'The last rejected upstream response (status, headers, retry-after, message, body up to 2KB) is kept as lastRejection in the stats snapshot and surfaced in the desktop event feed and logs.',
     ],
   });
 });
