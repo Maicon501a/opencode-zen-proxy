@@ -2,7 +2,7 @@
 
 > **Data da verificação:** 15 de outubro de 2026
 > **Ambiente:** proxy local (`http://127.0.0.1:3000`) com egress via **Tor isolado** → OpenCode Zen
-> **Escopo:** tool calling, visão (imagem), vídeo e áudio nos modelos gratuitos
+> **Escopo:** tool calling, visão (imagem), vídeo, áudio e mapeamento de contexto real nos modelos gratuitos
 
 **Resultado geral: 20/21 respostas `200` na primeira passada. A única falha foi um `429` de capacidade no vídeo do `step-5-preview-free` — que passou no retry imediato.**
 
@@ -148,7 +148,35 @@ Leitura da evidência:
 
 ---
 
-## 8. Exemplos de payload (copiar e colar)
+## 8. Contexto real vs. metadado do catálogo (DeepSeek V4.1 Flash)
+
+O catálogo anuncia **200.000 tokens** de contexto para `deepseek-v4.1-flash-free`. Na prática, isso é **metadado conservador** — o backend de inferência aceita a janela completa do modelo.
+
+**Reproduzido ao vivo via proxy em 15/10/2026 (dois testes independentes):**
+
+| Teste | Prompt enviado | `usage.prompt_tokens` | Status / latência |
+|---|---|---|---|
+| 1º | 1.069.989 caracteres (~1,08 MB de body) | **395.297** — ~2× o limite anunciado | `200` em 11,5s |
+| 2º | 2.490.174 caracteres (~2,5 MB de body) | **919.735** — ~4,6× o limite anunciado | `200` em 17,0s (395k vindos do prompt cache) |
+
+Nos dois testes: modelo `opencode/deepseek-v4.1-flash-free` (tier gratuito, sem key), egress via Tor isolado. Prompts de 2× e 4,6× o limite anunciado foram aceitos de primeira — sem erro, sem 429 e sem degradação na resposta. Os números de `usage` vêm do próprio upstream — não são estimativa do cliente.
+
+**Teto real:** os testes, somados, desenham a borda completa — nossos (via proxy): `200` em 395k e 920k tokens; de terceiros (Reddit, 15/10/2026): `200` em ~982k e ~1,037M, `400` em ~1,107M. A API direta do DeepSeek retorna a mensagem exata nesse `400`: `"O comprimento máximo do contexto deste modelo é de 1.048.576 tokens."` — **2²⁰ tokens**, o mesmo valor que o OpenCode apresenta como "1M" na variante paga (`opencode-go/deepseek-v4.1-flash`).
+
+**Como reproduzir:** monte um texto longo (ex.: ~21.000 linhas numeradas ≈ 2,5M de caracteres) e envie como mensagem única para `/v1/chat/completions` (não-stream). Confira `usage.prompt_tokens` na resposta — é a contagem do upstream.
+
+**Implicações:**
+
+- Em clientes, o `limit.context` do deepseek free pode ser elevado (ex.: `1000000`) para evitar compactação prematura de histórico. O valor do catálogo (200k) limita apenas o orçamento **local** do cliente — não o serviço.
+- A sobrescrita não aumenta a janela; ela só para de subestimar o cliente.
+- Cuidado: prompts gigantes consomem muita cota do tier gratuito de uma vez (nossos testes consumiram ~395k e ~920k tokens).
+- Contextos grandes com **prefixo repetido** pesam menos: no teste de 920k, ~395k tokens vieram do prompt cache do upstream (prefixo idêntico ao teste anterior) — reenvios de histórico com começo comum são mais rápidos e baratos.
+
+> Estes testes medem **capacidade de contexto**, não equivalência de backend: sem logprobs/detalhes internos não dá para afirmar que a variante gratuita usa os mesmos pesos/quantização da paga — apenas que ambas expõem a mesma janela do DeepSeek V4.1 Flash, com saídas determinísticas indistinguíveis nos testes de terceiros.
+
+---
+
+## 9. Exemplos de payload (copiar e colar)
 
 **Visão:**
 ```json
@@ -196,7 +224,7 @@ URLs HTTP(S) também funcionam no lugar de data URIs (para imagem; vídeo/áudio
 
 ---
 
-## 9. Notas e limitações
+## 10. Notas e limitações
 
 - **`max_tokens` em modelos de reasoning**: o raciocínio consome tokens primeiro. Use ≥ 500–800 em testes com resposta curta.
 - **Latências altas não são travamento**: `mimo-v2.6` (23s) e `big-pickle` (27s) podem levar dezenas de segundos em modo reasoning.

@@ -77,6 +77,8 @@ Valores oficiais da catalogação **models.dev** (a mesma fonte que o cliente of
 
 O prefixo `opencode/` é opcional em todos: `deepseek-v4.1-flash-free` funciona igual. Aliases curtos também funcionam (`deepseek-v4.1`, `cat-jam`, `step-5`, ...), inclusive com sufixo de esforço (`-low`, `-high`, `-max`).
 
+> **Contexto real vs. metadado:** o `deepseek-v4.1-flash-free` anuncia 200k no catálogo, mas o backend aceita **~1M** — prompts de **395.297** e **919.735 tokens** passaram com `200` (11,5s e 17,0s, medidos via proxy em 15/10/2026), e o teto real é **1.048.576 tokens** (2²⁰), igual à variante paga. Se seu cliente compacta histórico cedo demais, eleve o `limit.context` (ex.: `1000000`) — é o cliente que se limita, não o serviço.
+
 > **Capacidades verificadas ao vivo (15/10/2026):** tool calling (não-stream e stream), visão, vídeo e áudio — todos passaram pelo proxy via Tor (20/21 de primeira, +1 retry após 429 de capacidade). Detalhes e exemplos: `docs/COMPATIBILIDADE.md` no repositório.
 
 ## Configurar no OpenCode (provider custom)

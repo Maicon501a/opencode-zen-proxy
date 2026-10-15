@@ -99,6 +99,7 @@ router.get('/docs', (_req, res) => {
       'Muse Spark free models are Responses-only and are translated automatically for chat clients.',
       'Zen rate-limits by egress IP. On 429/502/503/504 (or a gateway 500) the proxy retries once through Cloudflare WARP.',
       'The last rejected upstream response (status, headers, retry-after, message, body up to 2KB) is kept as lastRejection in the stats snapshot and surfaced in the desktop event feed and logs.',
+      'The 200k context advertised for deepseek-v4.1-flash-free is conservative catalog metadata: prompts of 395,297 and 919,735 tokens were accepted live (200 OK in 11.5s and 17.0s, measured 2026-10-15). The real ceiling is 1,048,576 tokens (2^20) — same window as the paid variant; raise limit.context in clients if needed.',
     ],
   });
 });
