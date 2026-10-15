@@ -16,6 +16,9 @@ module.exports = [
         __filename: 'readonly',
         URL: 'readonly',
         fetch: 'readonly',
+        AbortController: 'readonly',
+        TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
         describe: 'readonly',
         it: 'readonly',
         test: 'readonly',
@@ -32,7 +35,9 @@ module.exports = [
       'no-undef': 'error',
       'no-redeclare': 'error',
       'no-dupe-keys': 'error',
-      eqeqeq: ['error', 'always'],
+      // `x == null` / `x != null` is the idiomatic nullish check; everything
+      // else must be strict.
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
     },
   },
   {

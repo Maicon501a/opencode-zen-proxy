@@ -1,39 +1,57 @@
 'use strict';
 
 const { config } = require('../config/constants');
+const keys = require('../services/keys');
 
 /**
  * Authentication middleware.
  *
- * Two keys are kept separate:
- *   - config.zenApiKey   : the upstream key sent TO Zen ("public" by default,
- *                          which unlocks free-tier models).
- *   - config.clientApiKey: an optional key enforced ON clients. When empty,
- *                          the proxy is open (no client auth required).
+ * Three modes, in priority order:
  *
- * This lets the proxy stay keyless for local use while still allowing an
- * operator to gate client access with CLIENT_API_KEY if they expose it.
+ *   1. DESKTOP-MANAGED KEYS — keys created through the admin API (desktop
+ *      app). When `requireKeys` is on, every client must present one:
+ *      `Authorization: Bearer sk-zen-…`. When it is off the proxy stays open,
+ *      but a presented key is still verified and attributed in the stats.
+ *   2. LEGACY SINGLE KEY — `CLIENT_API_KEY`, kept for standalone deployments.
+ *   3. OPEN — no keys configured: the proxy is keyless (local default).
  */
-function authMiddleware(req, res, next) {
-  if (config.clientApiKey) {
-    const authHeader = req.headers.authorization || '';
-    const provided = authHeader.startsWith('Bearer ')
-      ? authHeader.replace('Bearer ', '').trim()
-      : '';
 
-    if (provided !== config.clientApiKey) {
-      return res.status(401).json({
-        error: {
-          message: 'Invalid or missing API key.',
-          type: 'auth_error',
-          param: null,
-          code: 'invalid_api_key',
-        },
-      });
+function bearerToken(req) {
+  const authHeader = req.headers.authorization || '';
+  return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+}
+
+function unauthorized(res) {
+  return res.status(401).json({
+    error: {
+      message: 'Invalid or missing API key.',
+      type: 'auth_error',
+      param: null,
+      code: 'invalid_api_key',
+    },
+  });
+}
+
+function authMiddleware(req, res, next) {
+  const provided = bearerToken(req);
+
+  if (keys.count() > 0) {
+    const key = provided ? keys.verify(provided) : null;
+    if (!key && keys.requiresKeys()) {
+      return unauthorized(res);
     }
+    if (key) {
+      req.zenKey = key;
+      keys.touch(key.id);
+    }
+    return next();
   }
 
-  next();
+  if (config.clientApiKey && provided !== config.clientApiKey) {
+    return unauthorized(res);
+  }
+
+  return next();
 }
 
 module.exports = { authMiddleware };

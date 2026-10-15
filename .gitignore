@@ -1,4 +1,17 @@
+# dependencies
 node_modules/
+
+# secrets & local config
 .env
+.env.*
+!.env.example
+
+# proxy runtime data (stats, api keys, logs)
+/data/
+
+# test artifacts
+coverage/
+
+# os junk & logs
 .DS_Store
 *.log

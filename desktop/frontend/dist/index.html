@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>OpenCode Zen · Desktop</title>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">Z</div>
+      <div class="brand-text">
+        <div class="brand-title">OpenCode Zen</div>
+        <div class="brand-sub" id="brand-version">desktop</div>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-page="dashboard"><span class="nav-ico">◧</span>Dashboard</button>
+      <button class="nav-item" data-page="models"><span class="nav-ico">▦</span>Modelos</button>
+      <button class="nav-item" data-page="keys"><span class="nav-ico">⚿</span>API Keys</button>
+      <button class="nav-item" data-page="network"><span class="nav-ico">⛨</span>Rede &amp; IP</button>
+      <button class="nav-item" data-page="docs"><span class="nav-ico">≡</span>Documentação</button>
+      <button class="nav-item" data-page="settings"><span class="nav-ico">⚙</span>Configurações</button>
+      <button class="nav-item" data-page="logs"><span class="nav-ico">▤</span>Logs</button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="led-row"><span class="led" id="led-proxy"></span><span class="led-label">Proxy</span><span class="led-detail" id="led-proxy-detail">—</span></div>
+      <div class="led-row"><span class="led" id="led-tor"></span><span class="led-label">Tor</span><span class="led-detail" id="led-tor-detail">—</span></div>
+      <div class="sidebar-url" id="sidebar-url" title="Base URL para o cliente">—</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 id="page-title">Dashboard</h1>
+        <div class="page-sub" id="page-sub">visão geral em tempo real</div>
+      </div>
+      <div class="topbar-right">
+        <div class="chip" id="chip-ip" title="IP de saída atual">IP: —</div>
+        <div class="chip" id="chip-tokens" title="Tokens processados">0 tok</div>
+        <div class="chip" id="chip-req" title="Requisições">0 req</div>
+        <button class="btn btn-primary" id="btn-quick-rotate" title="Pedir um circuito Tor novo">Novo IP</button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ============================ DASHBOARD ============================ -->
+      <section class="page active" id="page-dashboard">
+        <div class="grid-cards">
+          <div class="card stat">
+            <div class="stat-label">Requisições</div>
+            <div class="stat-value" id="st-requests">0</div>
+            <div class="stat-foot" id="st-requests-foot">—</div>
+          </div>
+          <div class="card stat">
+            <div class="stat-label">Tokens (entrada / saída)</div>
+            <div class="stat-value" id="st-tokens">0</div>
+            <div class="stat-foot" id="st-tokens-foot">—</div>
+          </div>
+          <div class="card stat">
+            <div class="stat-label">Latência média</div>
+            <div class="stat-value" id="st-latency">—</div>
+            <div class="stat-foot" id="st-latency-foot">—</div>
+          </div>
+          <div class="card stat">
+            <div class="stat-label">Rate limits / rotações</div>
+            <div class="stat-value" id="st-ratelimit">0</div>
+            <div class="stat-foot" id="st-ratelimit-foot">—</div>
+          </div>
+        </div>
+
+        <div class="dash-grid">
+          <div class="card">
+            <div class="card-head">
+              <h2>Consumo por modelo</h2>
+              <button class="btn btn-ghost btn-sm" id="btn-stats-reset">zerar contadores</button>
+            </div>
+            <div class="table-wrap">
+              <table class="table" id="table-models">
+                <thead><tr><th>modelo</th><th class="num">req</th><th class="num">tok in</th><th class="num">tok out</th><th class="num">lat</th><th class="num">429</th></tr></thead>
+                <tbody id="table-models-body"><tr><td colspan="6" class="muted">sem requisições ainda</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>Eventos</h2>
+              <span class="muted" id="events-count"></span>
+            </div>
+            <div class="feed" id="feed-events"><div class="muted pad">nada por aqui ainda — mande uma requisição para o proxy</div></div>
+          </div>
+        </div>
+
+        <div class="dash-grid-2">
+          <div class="card ip-card">
+            <div class="card-head"><h2>IP de saída (Tor)</h2><span class="badge" id="dash-ip-state">—</span></div>
+            <div class="ip-value" id="dash-ip">—</div>
+            <div class="muted" id="dash-ip-meta">—</div>
+            <div class="row">
+              <button class="btn btn-primary" id="btn-dash-rotate">Novo IP</button>
+              <button class="btn" id="btn-dash-refresh">Atualizar</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Teste rápido</h2></div>
+            <div class="row">
+              <select id="test-model"></select>
+              <button class="btn btn-primary" id="btn-test">Enviar teste</button>
+            </div>
+            <input id="test-prompt" placeholder="prompt do teste (opcional)"/>
+            <pre class="mini-log" id="test-output">—</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ MODELOS ============================ -->
+      <section class="page" id="page-models">
+        <div class="toolbar">
+          <input id="models-filter" placeholder="filtrar por nome ou id…"/>
+          <label class="check"><input type="checkbox" id="models-free-only" checked/> só gratuitos</label>
+          <button class="btn" id="btn-models-refresh">Atualizar catálogo</button>
+          <span class="muted" id="models-count"></span>
+        </div>
+        <div class="models-grid" id="models-grid"><div class="muted pad">carregando catálogo…</div></div>
+      </section>
+
+      <!-- ============================ API KEYS ============================ -->
+      <section class="page" id="page-keys">
+        <div class="card">
+          <div class="card-head">
+            <h2>Exigir API key</h2>
+            <label class="switch"><input type="checkbox" id="chk-require-keys"/><span class="slider"></span></label>
+          </div>
+          <p class="muted">Desligado (padrão), o proxy fica aberto na sua máquina e as keys são <b>opcionais</b> — se apresentadas, o consumo é atribuído a cada cliente. Ligado, só requisições com <code>Authorization: Bearer sk-zen-…</code> válida passam.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Criar key</h2></div>
+          <div class="row">
+            <input id="key-name" placeholder="nome (ex: opencode do notebook)"/>
+            <button class="btn btn-primary" id="btn-key-create">Criar key</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Keys</h2><span class="muted" id="keys-count"></span></div>
+          <div class="table-wrap">
+            <table class="table" id="table-keys">
+              <thead><tr><th>nome</th><th>key</th><th class="num">req</th><th class="num">tok in</th><th class="num">tok out</th><th>último uso</th><th></th></tr></thead>
+              <tbody id="table-keys-body"><tr><td colspan="7" class="muted">nenhuma key criada</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ REDE & IP ============================ -->
+      <section class="page" id="page-network">
+        <div class="net-grid">
+          <div class="card">
+            <div class="card-head">
+              <h2>Isolamento via Tor</h2>
+              <label class="switch"><input type="checkbox" id="chk-tor"/><span class="slider"></span></label>
+            </div>
+            <p class="muted">Todo o tráfego do proxy para o Zen sai por um circuito Tor embutido (tor.exe sem Tor Browser). Sua máquina nunca fala direto com o upstream. Ligado por padrão.</p>
+            <div class="kv" id="tor-kv"></div>
+            <div class="progress" id="tor-progress-wrap"><div class="progress-bar" id="tor-progress"></div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>Rotação automática</h2>
+              <label class="switch"><input type="checkbox" id="chk-rotate"/><span class="slider"></span></label>
+            </div>
+            <p class="muted">Quando o Zen responde <b>rate-limit (429)</b> para o IP do circuito, o Tor troca o circuito e a requisição é <b>repetida sozinha</b> no IP novo.</p>
+            <div class="kv" id="rotate-kv"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>IP de saída</h2></div>
+            <div class="ip-value big" id="net-ip">—</div>
+            <div class="row">
+              <button class="btn btn-primary" id="btn-net-rotate">Novo IP agora</button>
+              <button class="btn" id="btn-net-refresh">Atualizar</button>
+            </div>
+            <div class="muted" id="net-cooldown"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Filtro de exits (opcional)</h2></div>
+            <div class="row">
+              <input id="input-exit-nodes" placeholder="ex: {br},{us} — vazio = automático"/>
+              <button class="btn" id="btn-exit-save">Salvar</button>
+            </div>
+            <p class="muted">Restringe os países de saída do Tor. Alterar reinicia o daemon (o bootstrap leva alguns segundos).</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Histórico de IP</h2><span class="muted" id="ip-history-count"></span></div>
+          <div class="feed" id="feed-ip-history"><div class="muted pad">ninguém trocou de IP ainda</div></div>
+        </div>
+      </section>
+
+      <!-- ============================ DOCS ============================ -->
+      <section class="page" id="page-docs">
+        <article class="docs" id="docs-body"><div class="muted pad">carregando documentação…</div></article>
+      </section>
+
+      <!-- ============================ CONFIG ============================ -->
+      <section class="page" id="page-settings">
+        <div class="set-grid">
+          <div class="card">
+            <div class="card-head"><h2>Proxy</h2></div>
+            <label class="field">Porta do proxy<input type="number" id="set-proxy-port" min="1" max="65535"/></label>
+            <label class="field">Diretório do proxy
+              <div class="row"><input id="set-proxy-dir"/><button class="btn btn-sm" id="btn-open-proxy-dir">abrir</button></div>
+            </label>
+            <label class="field">Executável do Node<input id="set-node-bin"/></label>
+            <label class="field">Nível de log
+              <select id="set-log-level"><option>debug</option><option>info</option><option>warn</option><option>error</option></select>
+            </label>
+            <label class="check"><input type="checkbox" id="set-autostart"/> iniciar o proxy junto com o app</label>
+            <div class="row"><button class="btn btn-primary" id="btn-save-settings">Salvar configurações</button></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Tor</h2></div>
+            <label class="field">Porta SOCKS<input type="number" id="set-tor-socks" min="1" max="65535"/></label>
+            <label class="field">Porta de controle<input type="number" id="set-tor-control" min="1" max="65535"/></label>
+            <label class="field">ExitNodes<input id="set-exit-nodes" placeholder="{br},{us}"/></label>
+            <label class="check"><input type="checkbox" id="set-tor-enabled"/> isolamento ligado</label>
+            <label class="check"><input type="checkbox" id="set-rotate"/> rotação automática em rate-limit</label>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Processo do proxy</h2></div>
+            <div class="kv" id="proc-kv"></div>
+            <div class="row">
+              <button class="btn" id="btn-proxy-start">Iniciar</button>
+              <button class="btn" id="btn-proxy-stop">Parar</button>
+              <button class="btn" id="btn-proxy-restart">Reiniciar</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Caminhos &amp; info</h2></div>
+            <div class="kv" id="paths-kv"></div>
+            <div class="row">
+              <button class="btn btn-sm" id="btn-open-data-dir">abrir pasta de dados</button>
+              <button class="btn btn-sm" id="btn-restart-tor">reiniciar Tor</button>
+            </div>
+            <div class="muted" id="about-text">—</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ LOGS ============================ -->
+      <section class="page" id="page-logs">
+        <div class="toolbar">
+          <div class="seg" id="log-levels">
+            <button data-level="" class="active">todos</button>
+            <button data-level="info">info</button>
+            <button data-level="warn">warn</button>
+            <button data-level="error">error</button>
+          </div>
+          <label class="check"><input type="checkbox" id="log-autoscroll" checked/> rolar automaticamente</label>
+          <button class="btn btn-sm" id="btn-logs-clear">limpar tela</button>
+        </div>
+        <pre class="logview" id="log-view"></pre>
+      </section>
+
+    </div>
+  </main>
+</div>
+<div class="toasts" id="toasts"></div>
+<script src="bridge.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

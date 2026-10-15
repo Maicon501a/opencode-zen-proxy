@@ -451,6 +451,112 @@ interface ProviderHelper {
 
 ---
 
+## Free-Tier Gate — Live Analysis (2026-10-15)
+
+The gate described earlier in this document (2026-09-25) had gone stale: by
+mid-October every request from a third-party client got
+`HTTP 403 FreeTierError` ("OpenCode's free tier can only be used from within
+OpenCode") — until the official client's traffic was captured and bisected
+against production again.
+
+### Capture
+
+The CLI honours `provider.<id>.options.baseURL`. A standalone headless instance
+pointed at a local trap server:
+
+```
+OPENCODE_CONFIG_CONTENT = {"provider":{"opencode":{"options":{"baseURL":"http://127.0.0.1:18899/zen/v1"}},"models":{...}}}
+opencode.exe run --standalone --format json -m opencode/deepseek-v4.1-flash-free "say ok"
+```
+
+yielded the exact wire request (headers in arrival order):
+
+| header | value |
+| --- | --- |
+| Authorization | `Bearer public` |
+| Content-Type | `application/json` |
+| User-Agent | `opencode/latest/2.0.29/cli` |
+| b3 / traceparent | fresh OpenTelemetry trace context |
+| x-opencode-client | `cli` |
+| x-opencode-project | 40-hex project sha1 |
+| x-opencode-session, x-opencode-session-id, x-session-affinity, x-session-id | `ses_<12 hex><14 alnum>` (same value in all four) |
+| Accept | `*/*` |
+
+Body keys: `model`, `messages`, `tools` (12 tools incl. `shell` and `read`),
+`stream: true`, `stream_options: {include_usage: true}`,
+`max_completion_tokens`.
+
+The CLI's own runtime was also available as a plain Bun (`BUN_BE_BUN=1` on the
+compiled binary), which proved the transport/TLS stack was **not** the
+discriminator — a raw Bun `fetch()` replay still got 403 while the executed
+capture got 200.
+
+### What decides the 403
+
+Replaying the captured request verbatim → 200. Removing elements one by one:
+
+| variant | status |
+| --- | --- |
+| full captured request | 200 |
+| full request, random tool schemas (names kept) | 200 |
+| body without any tools | 403 |
+| body with only `shell` | 403 |
+| body with only `read` | 200 |
+| body with all tools **except** `read` | 403 |
+| body with `read` renamed to `readX` | 403 |
+| Mozilla User-Agent instead of `opencode/...` | 403 |
+| no Authorization header | 200 |
+| `Authorization: Bearer xxx` | 401 `Invalid credential` |
+| `x-opencode-session` minted from the formula below | 200 |
+| `x-opencode-session` with a random 12-hex prefix | 403 |
+| fresh b3/traceparent instead of captured | 200 |
+| no b3/traceparent | 200 |
+| no x-opencode-client / -project / -session-id / affinity / x-session-id | 200 (each) |
+
+So exactly three client-side things are validated:
+
+1. `User-Agent` carrying the `opencode/` prefix.
+2. `X-Opencode-Session` holding an **`ascending` id** minted like the CLI mints
+   them (below). The other session mirrors are optional.
+3. A function tool named `read` somewhere in `tools` (schema not inspected;
+   `shell` is no longer required).
+
+### The session id is a time stamp
+
+Official ids look like `ses_ebff1dae9ffeVD94AD4vmI2ZYm`. Correlating ids from
+the CLI's own `session` table with `time_created` shows the 12-hex prefix is
+`hex48(EPOCH - unix_ms * 4096)`:
+
+```
+stamp  = (0x1b000000046ffe - unix_ms * 4096) mod 2^48        // EPOCH = 7599824371478526
+session = "ses_" + hex48(stamp) + 14 random [0-9a-zA-Z]
+```
+
+(the ids are "ascending": the stamp *decreases* as time flows; decode with
+`unix_ms = (0x1b000000046ffe - stamp) / 4096`). Samples match `time_created`
+within <70 ms across weeks; a full day-old minted id is still accepted, so the
+edge only checks that the stamp decodes to a plausible time — not freshness.
+
+### Final recipe (implemented in `src/services/zenGate.js`)
+
+```
+User-Agent: opencode/latest/2.0.29/cli
+X-Opencode-Session: ses_<hex48(EPOCH - now_ms*4096)><14 random base62>
+X-Opencode-Client: cli
+X-Opencode-Project: <40-hex>
+X-Opencode-Session-Id / X-Session-Affinity / X-Session-Id: same session
+Authorization: Bearer public
+body: stream=true + tools must include a function tool named "read"
+```
+
+The same recipe works on both dialects: `/chat/completions` for the free chat
+models and `/responses` for the Muse Spark contributor models. Live validation
+after the port: 8/10 free chat models returned 200 through the proxy
+(`step-5-preview-free` was a 429 upstream capacity error and `jev-1.13-free`
+reports `ModelProtocolUnsupported` on chat — both upstream-side, not gate).
+
+---
+
 ## References
 
 - [OpenCode Zen Documentation](https://opencode.ai/docs/zen/)

@@ -1,9 +1,11 @@
 # OpenCode Zen Proxy 🔌
 
-**Proxy OpenAI-compatível sem chave (keyless) para os modelos gratuitos do OpenCode Zen** — Acesse `deepseek-v4-flash-free`, `mimo-v2.5-free`, `nemotron-3-ultra-free` e mais através de um endpoint OpenAI padrão. **Sem chave de API, sem login, sem precisar instalar o opencode.**
+**Proxy OpenAI-compatível sem chave (keyless) para os modelos gratuitos do OpenCode Zen** — Acesse `deepseek-v4.1-flash-free`, `space-bunny-free`, `big-pickle`, `mimo-v2.6-flash-free` e mais através de um endpoint OpenAI padrão. **Sem chave de API, sem login, sem precisar instalar o opencode.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Build](https://github.com/Maicon501a/opencode-zen-proxy/actions/workflows/build.yml/badge.svg)](https://github.com/Maicon501a/opencode-zen-proxy/actions/workflows/build.yml)
 [![Node](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
+[![Desktop App](https://img.shields.io/badge/Desktop-Windows%20%7C%20Linux-blueviolet.svg)](https://github.com/Maicon501a/opencode-zen-proxy/releases)
 [![OpenAI Compatible](https://img.shields.io/badge/OpenAI-Compatible-blue.svg)](https://platform.openai.com/docs/api-reference)
 
 ---
@@ -26,12 +28,16 @@ Isso quebra a funcionalidade de **function calling nativo**, fazendo com que age
 
 ### A solução
 
-Este proxy elimina todas essas barreiras. Ele descobriu (analisando o binário do próprio opencode) que o gateway Zen aceita o token **`public`** como autenticação para liberar os modelos do tier gratuito — exatamente o que a CLI faz internamente quando nenhuma chave está configurada:
+Este proxy elimina todas essas barreiras. Analisando o binário **e o tráfego real** do opencode, ele descobriu como o gateway Zen libera o tier gratuito:
+
+- O gateway aceita o token **`public`** como autenticação — exatamente o que a CLI faz internamente quando nenhuma chave está configurada:
 
 ```js
 // código real extraído do binário do opencode
 options: hasKey ? {} : { apiKey: "public" }
 ```
+
+- Desde 23/09/2026 o edge também exige uma "assinatura" de cliente oficial (403 `FreeTierError` sem ela): `User-Agent: opencode/...`, um **session id cunhado exatamente como a CLI cunha** — o prefixo de 12 hex codifica o instante de criação (`(0x1b000000046ffe - unix_ms * 4096) mod 2^48`); ids aleatórios ou "de forma parecida" são recusados — e uma function tool chamada **`read`** no corpo. O proxy cunha esses ids e monta esse shape sozinho, a cada requisição (fórmula e evidências em `docs/REVERSE_ENGINEERING.md`).
 
 Com isso, o proxy:
 
@@ -47,21 +53,28 @@ Com isso, o proxy:
 - ✅ **Verdadeiramente keyless** — Conversa direto com o gateway Zen; sem backend `opencode serve`, sem login, sem chave de API
 - ✅ **Tool calling nativo (function calling)** — `tools`, `tool_choice` e streaming de `tool_calls` passam intactos (o que agentes como Kilo Code / Cline precisam)
 - ✅ **Streaming SSE** — Suporte completo a streaming, incluindo o `reasoning_content` estilo DeepSeek (chain-of-thought)
+- ✅ **Imagens / Vision** — Aceita `image_url` por URL ou data URI no formato OpenAI (inclusive variações de SDKs)
 - ✅ **Drop-in compatível** — Qualquer cliente OpenAI funciona apenas mudando a `baseURL`
-- ✅ **Aliases de modelo** — `deepseek-v4-flash-free` ou `opencode/deepseek-v4-flash-free` ambos funcionam
-- ✅ **Leve** — Um único processo Node, apenas o Express como dependência
+- ✅ **Aliases de modelo** — `deepseek-v4.1-flash-free` ou `opencode/deepseek-v4.1-flash-free` ambos funcionam
+- ✅ **Leve** — Um único processo Node com dependências mínimas (express, cors, dotenv)
+- 🖥️ **App desktop (Windows/Linux)** — painel com Tor embutido, estatísticas, chaves e documentação integrada (veja a seção **App Desktop** abaixo)
+- 📊 **Painel & admin API** — contadores de tokens por modelo, feed de eventos e rotação de IP (protegidos por tokens locais gerados a cada execução)
+- 🌐 **Egress opcional via Tor/WARP** — roteia as requisições por SOCKS5 com rotação automática de IP em rate-limit
 
 ---
 
 ## 🚀 Como Funciona
 
-O gateway OpenCode Zen já é uma API OpenAI-compatível completa. Seus modelos gratuitos podem ser liberados com o bearer token **`public`** — o mesmo comportamento da CLI opencode quando não há chave configurada.
+O gateway OpenCode Zen já é uma API OpenAI-compatível completa. Seus modelos gratuitos são liberados com o bearer token **`public`** — o mesmo comportamento da CLI opencode quando não há chave configurada — **mais** o carimbo de cliente oficial que o edge passou a exigir em 23/09/2026 (User-Agent `opencode/...`, session id cunhado no formato ascendente da CLI e a tool `read` no corpo).
 
 Este proxy reproduz esse comportamento sem exigir o binário do opencode, login ou uma instância local `opencode serve`. Ele simplesmente:
 
 1. Encaminha a requisição para o Zen com `Authorization: Bearer public`
-2. Remove o prefixo opcional `opencode/` do ID do modelo
-3. Passa todo o resto (mensagens, tools, streaming) **exatamente como recebido**
+2. Minta um session id igual ao da CLI (`ses_` + timestamp codificado + sufixo aleatório) e apresenta os headers oficiais (`User-Agent`, `X-Opencode-Session`, `X-Session-Affinity`, ...)
+3. Garante `stream: true` e a tool `read` (injetada quando o cliente não manda nenhuma) — o gateway só responde em SSE, e o proxy dobra o stream de volta quando o cliente pediu JSON
+4. Remove o prefixo opcional `opencode/` do ID do modelo
+5. Normaliza pequenas variações de entrada de imagens para o formato OpenAI padrão
+6. Passa todo o resto (mensagens, tools, streaming) **exatamente como recebido**
 
 Como o corpo da requisição é repassado sem alterações, o **function calling nativo funciona de ponta a ponta** — agentes recebem deltas reais de `tool_calls` em vez de texto puro.
 
@@ -133,6 +146,36 @@ O proxy iniciará em `http://localhost:3000`. Pronto — não há backend para i
 
 ---
 
+## 🖥️ App Desktop (Windows / Linux)
+
+Além da CLI, o projeto tem um app desktop completo (Wails) que embute o proxy + Tor, com painel de estatísticas, gerenciador de chaves, rotação de IP e documentação integrada.
+
+**Download:** o GitHub Actions compila e publica os binários em [Releases](https://github.com/Maicon501a/opencode-zen-proxy/releases):
+
+- `OpenCodeZenDesktop-windows-amd64.zip` — extraia e rode `OpenCodeZenDesktop.exe`
+- `OpenCodeZenDesktop-linux-amd64.tar.gz` — extraia e rode `./OpenCodeZenDesktop` (requer `libwebkit2gtk-4.1` instalado)
+
+**Pré-requisito:** [Node.js](https://nodejs.org/) 18+ no PATH — o app supervisiona o processo Node, e a cópia do proxy já vem embutida no binário.
+
+Recursos do app:
+
+- 🧅 **Tor embutido** (Tor Expert Bundle) — liga/desliga com um clique, escolha de exit node e rotação manual/automática de IP em rate-limit
+- 📊 **Painel** — contadores de tokens por modelo, feed de eventos e logs ao vivo
+- 🔑 **Chaves de API opcionais** — gere chaves para exigir autenticação dos clientes, aplicadas em runtime
+- 📖 **Documentação PT-BR integrada** + snippets prontos por modelo (curl, opencode, SDKs)
+
+O mesmo painel também abre no navegador em `http://127.0.0.1:46998/`.
+
+Para compilar localmente (Go 1.25+ e [Wails v2.13](https://wails.io)):
+
+```bash
+cd desktop
+wails build -clean                   # Windows
+wails build -clean -tags webkit2_41  # Linux
+```
+
+---
+
 ## 🔧 Como Usar
 
 > **Nota:** Nenhum cabeçalho `Authorization` é obrigatório dos clientes por padrão. Se quiser exigir, veja a seção [Configuração](#️-configuração).
@@ -143,13 +186,37 @@ O proxy iniciará em `http://localhost:3000`. Pronto — não há backend para i
 curl http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "opencode/deepseek-v4-flash-free",
+    "model": "opencode/deepseek-v4.1-flash-free",
     "messages": [
       {"role": "user", "content": "Escreva uma função Python para inverter uma string."}
     ],
     "max_tokens": 500
   }'
 ```
+
+### Entrada de imagens (Vision)
+
+Use um modelo multimodal, como o **`mimo-v2.6-flash-free`**, e envie partes `text` + `image_url` no conteúdo da mensagem. URLs HTTP(S) e data URIs base64 são aceitas:
+
+```bash
+curl http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "mimo-v2.6-flash-free",
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "Descreva esta imagem."},
+        {
+          "type": "image_url",
+          "image_url": {"url": "https://httpbin.org/image/png", "detail": "high"}
+        }
+      ]
+    }]
+  }'
+```
+
+Para base64, use `"url": "data:image/png;base64,..."`. O proxy também normaliza `image_url` enviado como string e partes `input_image` usadas por clientes compatíveis com a Responses API. Modelos somente texto rejeitam imagens; consulte `supportsVision` em `GET /v1/models/free`.
 
 ### 2. Tool Calling (chamadas de função)
 
@@ -159,7 +226,7 @@ Esta é a funcionalidade que faz agentes de IA funcionarem. O modelo recebe as f
 curl http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "opencode/deepseek-v4-flash-free",
+    "model": "opencode/deepseek-v4.1-flash-free",
     "messages": [{"role": "user", "content": "Qual é o clima em Tóquio?"}],
     "tools": [{
       "type": "function",
@@ -198,34 +265,30 @@ A resposta contém `tool_calls` no formato OpenAI padrão, com `finish_reason: "
 
 ### 3. Controlando o Esforço de Raciocínio (reasoning_effort)
 
-Modelos de raciocínio (como o `deepseek-v4-flash-free`) "pensam" antes de responder. Você controla **quanto** eles pensam com o campo `reasoning_effort`:
+Modelos de raciocínio (como o `deepseek-v4.1-flash-free`) "pensam" antes de responder. Você controla **quanto** eles pensam com o campo `reasoning_effort`:
 
 ```bash
 curl http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-v4-flash-free",
+    "model": "deepseek-v4.1-flash-free",
     "messages": [{"role": "user", "content": "Resolva passo a passo: 15 * 17"}],
     "reasoning_effort": "high",
     "max_tokens": 800
   }'
 ```
 
-**Por padrão, o proxy usa `xhigh` (o máximo)** — ou seja, o modelo sempre pensa o máximo possível. Você pode mudar isso por requisição.
+**Por padrão, o proxy usa `high`** — o modelo pensa de forma aprofundada, mas com espaço garantido para a resposta. Ajuste por requisição ou mude o padrão global com `DEFAULT_REASONING_EFFORT`.
 
-Valores aceitos (confirmados diretamente no gateway Zen/DeepSeek):
+Efetivamente os modelos de chat aceitam três níveis (o proxy mapeia o resto):
 
 | Valor      | Comportamento                                   |
 |------------|-------------------------------------------------|
 | `low`      | Raciocínio curto, respostas mais rápidas        |
-| `medium`   | Equilíbrio entre profundidade e velocidade      |
-| `high`     | Raciocínio aprofundado                          |
+| `high`     | Raciocínio aprofundado (**padrão do proxy**)    |
 | `max`      | Quase o máximo                                  |
-| `xhigh`    | **Máximo** (padrão do proxy)                    |
 
-> Valores inválidos ou omitidos caem automaticamente no padrão configurado (`xhigh`). Valores como `none`/`minimal` são **rejeitados** pelo gateway (o DeepSeek exige algum raciocínio).
-
-Para mudar o padrão global, defina a variável de ambiente `DEFAULT_REASONING_EFFORT` (ex: `medium`).
+> `medium` → `high`, `xhigh` → `max`, `none`/`minimal` → `low` nos modelos de chat. Os modelos **Muse Spark** (Responses API) aceitam o vocabulário completo da OpenAI (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`).
 
 ### 4. Streaming (SSE)
 
@@ -233,7 +296,7 @@ Para mudar o padrão global, defina a variável de ambiente `DEFAULT_REASONING_E
 curl http://localhost:3000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-v4-flash-free",
+    "model": "deepseek-v4.1-flash-free",
     "messages": [{"role": "user", "content": "Conte até 10."}],
     "stream": true
   }'
@@ -257,7 +320,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="deepseek-v4-flash-free",
+    model="deepseek-v4.1-flash-free",
     messages=[{"role": "user", "content": "Olá!"}],
 )
 print(response.choices[0].message.content)
@@ -273,7 +336,7 @@ const client = new OpenAI({
 });
 
 const response = await client.chat.completions.create({
-  model: 'deepseek-v4-flash-free',
+  model: 'deepseek-v4.1-flash-free',
   messages: [{ role: 'user', content: 'Olá!' }],
 });
 console.log(response.choices[0].message.content);
@@ -289,7 +352,7 @@ Esta é uma das principais aplicações do proxy. Clientes agentic como o **Kilo
 |---------------|----------------------------------------|
 | **Base URL**  | `http://localhost:3000/v1`             |
 | **API Key**   | qualquer valor (ex: `none`)            |
-| **Model**     | `deepseek-v4-flash-free` (ou outro da lista `/v1/models`) |
+| **Model**     | `deepseek-v4.1-flash-free` (ou outro da lista `/v1/models`) |
 
 Como o tool calling e o streaming funcionam nativamente, o agente consegue ler/escrever arquivos, rodar ferramentas e executar tarefas — tudo de graça.
 
@@ -308,21 +371,27 @@ Resultado: o agente (ex: Kilo Code) nunca recebia os `tool_calls`, ficando trava
 
 ## 📋 Modelos Gratuitos
 
-Os modelos do tier gratuito, acessíveis com o token `public`:
+Os modelos do tier gratuito, acessíveis com o token `public` (limites oficiais do catálogo Zen):
 
-| ID do Modelo                    | Nome                   | Tools | Reasoning |
-|---------------------------------|------------------------|:-----:|:---------:|
-| `opencode/deepseek-v4-flash-free` | DeepSeek V4 Flash Free |  ✅   |    ✅     |
-| `opencode/big-pickle`           | Big Pickle             |  ✅   |    —      |
-| `opencode/mimo-v2.5-free`       | MiMo V2.5 Free         |  ✅   |    —      |
-| `opencode/nemotron-3-ultra-free`| Nemotron 3 Ultra Free  |  ✅   |    —      |
-| `opencode/north-mini-code-free` | North Mini Code        |  ✅   |    —      |
+| ID do Modelo | Nome | Contexto | Saída máx. | Tools | Vision |
+|---|---|--:|--:|:--:|:--:|
+| `opencode/deepseek-v4.1-flash-free` | DeepSeek V4.1 Flash Free | 200.000 | 32.000 | ✅ | ✅ |
+| `opencode/space-bunny-free` | Space Bunny Free | 1.048.576 | 524.288 | ✅ | ✅ |
+| `opencode/cat-jam-free` | Cat Jam Free | 262.144 | 131.072 | ✅ | — |
+| `opencode/mimo-v2.6-flash-free` | MiMo V2.6 Flash Free | 200.000 | 32.000 | ✅ | ✅ |
+| `opencode/nemotron-3.5-lightning-free` | Nemotron 3.5 Lightning Free | 262.144 | 262.144 | ✅ | — |
+| `opencode/nemotron-3.5-super-vl-free` | Nemotron 3.5 Super VL Free | 1.048.576 | 131.072 | ✅ | ✅ |
+| `opencode/step-5-preview-free` | Step 5 Preview Free | 1.000.000 | 65.536 | ✅ | ✅ |
+| `opencode/longcat-2.5-preview-free` | LongCat 2.5 Preview Free | 1.000.000 | 131.072 | ✅ | ✅ |
+| `opencode/big-pickle` | Big Pickle | 200.000 | 32.000 | ✅ | — |
+| `opencode/muse-spark-1.3-contributor-free` | Muse Spark 1.3 Free | 1.048.576 | 131.072 | ✅ | ✅ |
+| `opencode/muse-spark-1.2-contributor-free` | Muse Spark 1.2 Free | 1.048.576 | 131.072 | ✅ | ✅ |
 
-Você pode usar **aliases curtos** omitindo o prefixo `opencode/` (ex: `deepseek-v4-flash-free`).
+Você pode usar **aliases curtos** omitindo o prefixo `opencode/` (ex: `deepseek-v4.1-flash-free`, `space-bunny`, `muse-spark-1.3`).
 
-> O conjunto exato de modelos depende do que o Zen expõe no momento. Rode `curl http://localhost:3000/v1/models` para ver a lista atualizada (vinda direto do Zen — atualmente 50 modelos).
+> O conjunto exato de modelos depende do que o Zen expõe no momento. Rode `curl http://localhost:3000/v1/models` para ver a lista atualizada (vinda direto do Zen — 87 modelos no catálogo, 11 gratuitos).
 
-> **Atenção ao reasoning:** O `deepseek-v4-flash-free` é um modelo de raciocínio. Ele emite o chain-of-thought (raciocínio) através do campo `reasoning_content` (estilo DeepSeek). Use um `max_tokens` generoso (ex: 500+) para que ele tenha espaço tanto para pensar quanto para responder.
+> **Atenção ao reasoning:** O `deepseek-v4.1-flash-free` é um modelo de raciocínio. Ele emite o chain-of-thought (raciocínio) através do campo `reasoning_content` (estilo DeepSeek). Use um `max_tokens` generoso (ex: 500+) para que ele tenha espaço tanto para pensar quanto para responder.
 
 ---
 
@@ -334,10 +403,13 @@ Todas as configurações são feitas via variáveis de ambiente (arquivo `.env` 
 |------------------------------|---------------------------------|-----------|
 | `PORT`                       | `3000`                          | Porta do servidor proxy |
 | `HOST`                       | `0.0.0.0`                       | Host do servidor proxy |
+| `MAX_REQUEST_SIZE`           | `50mb`                          | Limite do JSON; aumente se enviar imagens base64 grandes |
 | `ZEN_API_BASE_URL`           | `https://opencode.ai/zen/v1`    | URL base da API Zen |
 | `ZEN_API_KEY` / `OPENCODE_API_KEY` | `public`                  | Token bearer enviado ao Zen. `public` libera os modelos gratuitos; defina uma chave real para acessar também modelos pagos |
 | `CLIENT_API_KEY`             | _(vazio)_                       | Se definido, os clientes devem enviar esta chave. Quando vazio, o proxy fica aberto (uso local) |
-| `DEFAULT_REASONING_EFFORT`   | `xhigh`                         | Esforço de raciocínio padrão para modelos reasoning: `low`, `medium`, `high`, `max` ou `xhigh` |
+| `DEFAULT_REASONING_EFFORT`   | `high`                          | Esforço padrão para modelos reasoning (chat: `low`/`high`/`max`; Muse: `none`…`xhigh`) |
+| `PROXY_DATA_DIR`             | `./data`                        | Diretório de dados persistidos (estatísticas, chaves, logs) |
+| `UPSTREAM_SOCKS5`            | _(vazio)_                       | Roteia as requisições ao Zen via SOCKS5 (ex: Tor `socks5://127.0.0.1:9050`) |
 | `LOG_LEVEL`                  | `info`                          | Nível de log: debug, info, warn, error |
 
 ### Exemplo de `.env`
@@ -388,29 +460,32 @@ pnpm lint
 ```
 opencode-zen-proxy/
 ├── src/
-│   ├── index.js              # Ponto de entrada
-│   ├── server.js             # Configuração do Express
+│   ├── index.js                # Ponto de entrada
+│   ├── server.js               # Configuração do Express
 │   ├── config/
-│   │   ├── models.js         # Definições e aliases dos modelos
-│   │   └── constants.js      # Constantes de configuração
+│   │   ├── models.js           # Catálogo free-tier + limites oficiais
+│   │   └── constants.js        # Constantes de configuração
 │   ├── middleware/
-│   │   ├── auth.js           # Verificação opcional de chave do cliente
-│   │   └── errorHandler.js   # Tratamento de erros
+│   │   ├── auth.js             # Verificação opcional de chave do cliente
+│   │   └── errorHandler.js     # Tratamento de erros
 │   ├── routes/
-│   │   ├── chatCompletions.js # /v1/chat/completions (pass-through)
-│   │   ├── models.js         # /v1/models (proxy do Zen)
-│   │   └── health.js         # /health, /, /docs
-│   ├── services/
-│   │   └── zenClient.js      # Cliente HTTP para a API Zen
-│   └── __tests__/
-│       ├── models.test.js    # Testes unitários
-│       └── reasoning.test.js # Testes do reasoning_effort
-├── tests/
-│   └── integration/
-│       └── api.test.js       # Testes de integração
+│   │   ├── chatCompletions.js  # /v1/chat/completions
+│   │   ├── responses.js        # /v1/responses (Muse Spark, traduzido p/ chat)
+│   │   ├── models.js           # /v1/models (+ limites, fusão com catálogo live)
+│   │   ├── admin.js            # API administrativa (stats, chaves, rotação de IP)
+│   │   └── health.js           # /health, /, /docs
+│   ├── services/               # zenGate, transport (Tor/WARP), SSE, conversores,
+│   │   ...                     # stats, chaves, logging
+│   └── __tests__/              # Testes unitários
+├── tests/integration/          # Testes de integração
+├── desktop/                    # App desktop (Wails)
+│   ├── app.go                  # Bindings, API local (:46998), supervisor tor/node
+│   ├── internal/               # tormgr, proxyproc, settings, logbuf, docs
+│   └── frontend/dist/          # UI estática (HTML/CSS/JS)
+├── .github/workflows/build.yml # CI: testes do proxy + build Windows/Linux
 ├── docs/
 │   └── REVERSE_ENGINEERING.md  # Análise técnica detalhada
-├── eslint.config.js          # Configuração do linter
+├── eslint.config.js            # Configuração do linter
 ├── package.json
 ├── .env.example
 └── README.md
@@ -422,9 +497,9 @@ opencode-zen-proxy/
 
 **Modelos gratuitos no OpenCode Zen podem coletar dados de sessão para melhoria dos modelos.** Evite enviar informações confidenciais ou pessoais ao usar os endpoints gratuitos, em particular:
 
-- `opencode/deepseek-v4-flash-free`
+- `opencode/deepseek-v4.1-flash-free`
 - `opencode/big-pickle`
-- `opencode/nemotron-3-ultra-free`
+- `opencode/space-bunny-free`
 
 ---
 
@@ -446,7 +521,7 @@ Sim. É o comportamento documentado dentro do próprio código do opencode CLI. 
 Este proxy preserva o **function calling nativo**. O `opencode serve` intercepta e descarta os tools do seu cliente, quebrando agentes de IA. Este proxy repassa tudo intacto.
 
 **Como controlo o quanto o modelo "pensa"?**
-Use o campo `reasoning_effort` na requisição: `low`, `medium`, `high`, `max` ou `xhigh`. Por padrão o proxy usa `xhigh` (máximo). Mude o padrão global com a variável `DEFAULT_REASONING_EFFORT`. Veja a seção [Controlando o Esforço de Raciocínio](#3-controlando-o-esforço-de-raciocínio-reasoning_effort).
+Use o campo `reasoning_effort` na requisição: `low`, `high` ou `max` (valores como `medium`/`xhigh` são mapeados automaticamente). Por padrão o proxy usa `high`. Mude o padrão global com a variável `DEFAULT_REASONING_EFFORT`. Veja a seção [Controlando o Esforço de Raciocínio](#3-controlando-o-esforço-de-raciocínio-reasoning_effort).
 
 ---
 

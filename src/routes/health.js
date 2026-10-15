@@ -1,80 +1,97 @@
 'use strict';
 
 const express = require('express');
+const warp = require('../services/warp');
+const transport = require('../services/transport');
+const { FREE_MODELS } = require('../config/models');
 
 const router = express.Router();
 
+const VERSION = '2.1.0';
+
 /**
  * GET /health
- *
- * Health check endpoint for the proxy.
  */
 router.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     service: 'opencode-zen-proxy',
-    version: '1.0.0',
+    version: VERSION,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    upstream: 'https://opencode.ai/zen/v1',
+    zenGate: 'free-tier (official CLI headers + forced streaming)',
+    transport: transport.status(),
+    warp: warp.status(),
   });
 });
 
 /**
- * GET /
+ * GET /warp/status
  *
- * Root endpoint with basic info.
+ * Current WARP failover state (is the isolated SOCKS egress active?).
+ */
+router.get('/warp/status', (_req, res) => {
+  res.json({ status: 'ok', warp: warp.status() });
+});
+
+/**
+ * GET /
  */
 router.get('/', (_req, res) => {
   res.json({
     name: 'OpenCode Zen Proxy',
-    version: '1.0.0',
-    description: 'OpenAI-compatible proxy for OpenCode Zen API',
+    version: VERSION,
+    description: 'Keyless OpenAI-compatible proxy for the OpenCode Zen free tier',
     documentation: '/docs',
     health: '/health',
     models: '/v1/models',
-    chat: '/v1/chat/completions (POST)',
+    chat: 'POST /v1/chat/completions',
+    responses: 'POST /v1/responses',
   });
 });
 
 /**
  * GET /docs
- *
- * Quick documentation in JSON format.
  */
 router.get('/docs', (_req, res) => {
   res.json({
     service: 'OpenCode Zen Proxy',
+    version: VERSION,
     usage: {
-      'List Models': {
-        method: 'GET',
-        endpoint: '/v1/models',
-      },
-      'Chat Completions (non-streaming)': {
+      'List models': { method: 'GET', endpoint: '/v1/models' },
+      'Free models (curated)': { method: 'GET', endpoint: '/v1/models/free' },
+      'Chat completions': {
         method: 'POST',
         endpoint: '/v1/chat/completions',
         body: {
-          model: 'opencode/deepseek-v4-flash-free',
-          messages: [{ role: 'user', content: 'Hello!' }],
-        },
-      },
-      'Chat Completions (streaming)': {
-        method: 'POST',
-        endpoint: '/v1/chat/completions',
-        body: {
-          model: 'opencode/deepseek-v4-flash-free',
+          model: 'opencode/deepseek-v4.1-flash-free',
           messages: [{ role: 'user', content: 'Hello!' }],
           stream: true,
         },
       },
+      'Responses API': {
+        method: 'POST',
+        endpoint: '/v1/responses',
+        body: {
+          model: 'opencode/muse-spark-1.3-contributor-free',
+          input: 'Hello!',
+          stream: true,
+        },
+      },
+      'Reasoning effort': {
+        field: 'reasoning_effort',
+        vocabulary: 'low | high | max (chat models)',
+        aliasSuffixes: ['-low', '-high', '-max'],
+        example: 'opencode/space-bunny-free-max',
+      },
     },
-    'Model Aliases': 'You can omit the "opencode/" prefix. E.g., "deepseek-v4-flash-free" works.',
-    authentication: 'Keyless. The proxy forwards "public" to Zen for free-tier models. Set CLIENT_API_KEY to gate client access.',
-    'Free Models': [
-      'opencode/deepseek-v4-flash-free',
-      'opencode/big-pickle',
-      'opencode/mimo-v2.5-free',
-      'opencode/nemotron-3-ultra-free',
-      'opencode/north-mini-code-free',
+    authentication: 'Keyless. The proxy presents itself as the official OpenCode CLI and forwards "public" to Zen.',
+    freeModels: FREE_MODELS.map((model) => model.id),
+    notes: [
+      'The Zen free-tier gate requires streamed requests; non-streaming clients get the folded SSE back as one JSON object.',
+      'Muse Spark free models are Responses-only and are translated automatically for chat clients.',
+      'Zen rate-limits by egress IP. On 429/502/503/504 (or a gateway 500) the proxy retries once through Cloudflare WARP.',
     ],
   });
 });

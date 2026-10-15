@@ -3,14 +3,15 @@
 /**
  * Integration tests for the OpenCode Zen Proxy API.
  *
- * These tests verify the proxy works correctly end-to-end.
- * They use supertest to make HTTP requests to the Express app.
+ * These tests verify the proxy routes, validation and model metadata without
+ * touching the network (the live Zen catalog fetch is stubbed out).
  *
- * To run: npm test
+ * To run: pnpm test
  */
 
 const http = require('http');
 const { createApp } = require('../../src/server');
+const zen = require('../../src/services/zenClient');
 
 // Helper to make requests without starting a server
 function request(app, method, path, options = {}) {
@@ -70,6 +71,16 @@ describe('API Integration Tests', () => {
     app = createApp();
   });
 
+  beforeEach(() => {
+    // The model listing endpoint tries the live Zen catalog first. Keep the
+    // suite hermetic: force the curated free-list fallback.
+    jest.spyOn(zen, 'fetchModels').mockRejectedValue(new Error('offline (test)'));
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   describe('GET /health', () => {
     it('should return health status', async () => {
       const res = await request(app, 'GET', '/health');
@@ -92,8 +103,9 @@ describe('API Integration Tests', () => {
       const res = await request(app, 'GET', '/docs');
       expect(res.status).toBe(200);
       expect(res.body.service).toBe('OpenCode Zen Proxy');
-      expect(res.body['Free Models']).toBeInstanceOf(Array);
-      expect(res.body['Free Models'].length).toBeGreaterThan(0);
+      expect(res.body.freeModels).toBeInstanceOf(Array);
+      expect(res.body.freeModels.length).toBeGreaterThan(0);
+      expect(res.body.usage['Reasoning effort'].field).toBe('reasoning_effort');
     });
   });
 
@@ -131,11 +143,11 @@ describe('API Integration Tests', () => {
 
   describe('GET /v1/models/:id (authenticated)', () => {
     it('should return specific model details', async () => {
-      const res = await request(app, 'GET', '/v1/models/opencode/deepseek-v4-flash-free', {
+      const res = await request(app, 'GET', '/v1/models/opencode/deepseek-v4.1-flash-free', {
         headers: { Authorization: 'Bearer test-key' },
       });
       expect(res.status).toBe(200);
-      expect(res.body.id).toBe('opencode/deepseek-v4-flash-free');
+      expect(res.body.id).toBe('opencode/deepseek-v4.1-flash-free');
     });
 
     it('should return 404 for unknown model', async () => {
@@ -202,6 +214,46 @@ describe('API Integration Tests', () => {
         },
       });
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe('POST /v1/responses (validation)', () => {
+    it('should return 400 if model is missing', async () => {
+      const res = await request(app, 'POST', '/v1/responses', {
+        headers: { 'Content-Type': 'application/json' },
+        body: { input: 'Hello' },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error.param).toBe('model');
+    });
+
+    it('should reject a non-object body', async () => {
+      const res = await request(app, 'POST', '/v1/responses', {
+        headers: { 'Content-Type': 'application/json' },
+        body: 'nope',
+      });
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('free model metadata', () => {
+    it('exposes the API mode and effort vocabulary per model', async () => {
+      const res = await request(app, 'GET', '/v1/models/free');
+      expect(res.status).toBe(200);
+
+      const muse = res.body.data.find((m) => m.id === 'opencode/muse-spark-1.3-contributor-free');
+      expect(muse.apiMode).toBe('responses');
+      expect(muse.endpoint).toBe('/v1/responses');
+
+      const chat = res.body.data.find((m) => m.id === 'opencode/deepseek-v4.1-flash-free');
+      expect(chat.apiMode).toBe('chat');
+      expect(chat.reasoningEfforts).toEqual(['low', 'high', 'max']);
+    });
+
+    it('resolves aliases and effort suffixes on the detail endpoint', async () => {
+      const res = await request(app, 'GET', '/v1/models/space-bunny');
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe('opencode/space-bunny-free');
     });
   });
 

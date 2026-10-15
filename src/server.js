@@ -2,12 +2,15 @@
 
 const express = require('express');
 const cors = require('cors');
+const { config } = require('./config/constants');
 
 const { authMiddleware } = require('./middleware/auth');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const adminRoutes = require('./routes/admin');
 const healthRoutes = require('./routes/health');
 const modelsRoutes = require('./routes/models');
 const chatRoutes = require('./routes/chatCompletions');
+const responsesRoutes = require('./routes/responses');
 
 /**
  * Create and configure the Express application.
@@ -15,24 +18,32 @@ const chatRoutes = require('./routes/chatCompletions');
 function createApp() {
   const app = express();
 
-  // ----- Global Middleware -----
+  // ----- Global middleware -----
   app.use(cors());
-  app.use(express.json({ limit: '10mb' }));
+  // Base64 data URIs are ~33% larger than the source file. Keep this
+  // configurable and generous enough for screenshots from coding clients.
+  app.use(express.json({ limit: config.maxRequestSize }));
 
-  // ----- Open Routes (no auth required) -----
+  // ----- Admin API (desktop app / local tooling) -----
+  // Guarded by ADMIN_TOKEN (or loopback-only when unset); never public.
+  app.use('/', adminRoutes);
+
+  // ----- Open routes (no auth) -----
   app.use('/', healthRoutes);
 
-  // ----- Authenticated Routes -----
-  // Apply auth middleware to all /v1/* routes
+  // ----- Authenticated routes -----
   app.use('/v1', authMiddleware);
 
-  // Model listing endpoints (require auth per Zen API convention)
+  // Model listing endpoints
   app.use('/v1', modelsRoutes);
 
-  // Chat completions endpoint
+  // OpenAI-compatible surfaces. Both are backed by the same Zen free tier:
+  // chat models answer on /chat/completions, Muse models on /responses, and
+  // the proxy translates between the two dialects in either direction.
   app.use('/v1', chatRoutes);
+  app.use('/v1', responsesRoutes);
 
-  // ----- Error Handling -----
+  // ----- Error handling -----
   app.use(notFoundHandler);
   app.use(errorHandler);
 
