@@ -379,7 +379,8 @@ Os modelos do tier gratuito, acessíveis com o token `public` (limites oficiais 
 
 | ID do Modelo | Nome | Contexto | Saída máx. | Tools | Vision | Vídeo | Áudio |
 |---|---|--:|--:|:--:|:--:|:--:|:--:|
-| `opencode/deepseek-v4.1-flash-free` | DeepSeek V4.1 Flash Free | 200.000 | 32.000 | ✅ | ✅ | — | — |
+| `opencode/deepseek-v4.1-flash-free` | DeepSeek V4.1 Flash Free | 1.048.576 | 32.000 | ✅ | ✅ | — | — |
+| `opencode/glm-5.3-flash-free` | GLM 5.3 Flash Free | 900.000 | 32.000 | ✅ | ✅ | ✅ | — |
 | `opencode/space-bunny-free` | Space Bunny Free | 1.048.576 | 524.288 | ✅ | ✅ | ✅ | — |
 | `opencode/cat-jam-free` | Cat Jam Free | 262.144 | 131.072 | ✅ | — | — | — |
 | `opencode/mimo-v2.6-flash-free` | MiMo V2.6 Flash Free | 200.000 | 32.000 | ✅ | ✅ | ✅ | ✅ |
@@ -397,7 +398,7 @@ Você pode usar **aliases curtos** omitindo o prefixo `opencode/` (ex: `deepseek
 
 > **Capacidades verificadas ao vivo (15/10/2026):** tool calling (não-stream e stream), visão, **vídeo** e **áudio** testados ponta-a-ponta pelo proxy via Tor — 20/21 respostas OK de primeira (+1 retry após 429 de capacidade). Matriz por modelo, exemplos de payload e a captura de rejeições: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
 
-> **Contexto real vs. oficial:** o `deepseek-v4.1-flash-free` anuncia 200.000 tokens, mas o backend aceita a janela completa de **~1M** — verificado ao vivo em dois testes: prompts de **395.297** e **919.735 tokens** aceitos com `200` (11,5s e 17,0s, via Tor) — ~4,6× o limite anunciado. O teto real é **1.048.576** (2²⁰), igual à variante paga. Os 200k são metadado do catálogo, não limite de serviço: se seu cliente compacta histórico cedo demais, eleve `limit.context` (ex.: `1000000`). Evidência e como reproduzir: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
+> **Contexto real vs. oficial:** os catálogos anunciam 200.000 tokens para `deepseek-v4.1-flash-free` e `glm-5.3-flash-free`, mas isso é metadado do cliente — não limite de serviço. Verificado ao vivo via proxy: deepseek aceitou **395.297** e **919.735 tokens** (`200`, 15/10/2026; janela real **1.048.576** = 2²⁰, igual à variante paga); glm 5.3 flash aceitou **512.613 / 899.857 / 919.293 / 922.038 tokens** (`200`, 16/10/2026) e rejeitou ~926k com `context_length_exceeded` — maior entrada verificada ~922k. O catálogo deste proxy já expõe os valores reais (deepseek 1.048.576; glm 900.000, valor redondo verificado); eleve `limit.context` no seu cliente para acompanhar. Evidência e como reproduzir: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
 
 > **Atenção ao reasoning:** O `deepseek-v4.1-flash-free` é um modelo de raciocínio. Ele emite o chain-of-thought (raciocínio) através do campo `reasoning_content` (estilo DeepSeek). Use um `max_tokens` generoso (ex: 500+) para que ele tenha espaço tanto para pensar quanto para responder.
 
@@ -534,8 +535,8 @@ Use o campo `reasoning_effort` na requisição: `low`, `high` ou `max` (valores 
 **Os modelos aceitam imagem, vídeo e áudio?**
 Sim — conforme o modelo. Verificado ao vivo em 15/10/2026: visão em `mimo-v2.6`, `deepseek-v4.1`, `nemotron-3.5-super-vl` e `space-bunny`; vídeo em `space-bunny`, `step-5` e `mimo-v2.6`; áudio em `mimo-v2.6`. Envie as partes `image_url`, `video_url` e `input_audio` (data URI base64 funciona). Matriz completa por modelo: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
 
-**O contexto do `deepseek-v4.1-flash-free` é mesmo 200k?**
-Não — os 200.000 tokens são metadado conservador do catálogo. Verificado ao vivo em 15/10/2026 com dois prompts: **395.297 tokens** (1,07M de caracteres; `200 OK` em 11,5s) e **919.735 tokens** (2,49M de caracteres; `200 OK` em 17,0s, com 395k servidos pelo prompt cache) — tudo via Tor, sem rate-limit. O teto real do modelo é **1.048.576 tokens** (2²⁰) — o mesmo da variante paga. Em clientes, você pode elevar `limit.context` (ex.: `1000000`) para evitar compactação prematura de histórico; a sobrescrita não muda o serviço, só para de subestimar o cliente. Detalhes: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
+**O contexto do `deepseek-v4.1-flash-free` (e do `glm-5.3-flash-free`) é mesmo 200k?**
+Não — os 200.000 tokens são metadado conservador do catálogo (orçamento do cliente, não intensidade do serviço). Verificado ao vivo em 15/10/2026: deepseek com **395.297 tokens** (1,07M de caracteres; `200 OK` em 11,5s) e **919.735 tokens** (2,49M de caracteres; `200 OK` em 17,0s, com 395k servidos pelo prompt cache) — tudo via Tor, sem rate-limit. O teto real do deepseek é **1.048.576 tokens** (2²⁰) — o mesmo da variante paga. Em 16/10/2026, o mesmo teste no **glm-5.3-flash-free**: **512.613 / 899.857 / 919.293 / 922.038 tokens** todos aceitos com `200` (o de 922k em 48s) e ~926k rejeitado com `context_length_exceeded` — maior entrada verificada ~922k, então o catálogo adota **900.000** como valor redondo seguro. Em clientes, eleve `limit.context` (deepseek `1048576`; glm `900000`) para evitar compactação prematura de histórico; a sobrescrita não muda o serviço, só para de subestimar o cliente. Detalhes: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
 
 **O que é o `lastRejection` no `/api/stats`?**
 É a captura da última rejeição do upstream (ex.: 429): status, headers completos, `retry-after`, mensagem parseada e corpo (até 2KB). Também aparece nos Logs e no feed de Eventos do app desktop, no momento em que acontece. Serve para ler a mensagem exata do Zen quando a cota diária do tier gratuito estourar.

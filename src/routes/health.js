@@ -97,9 +97,9 @@ router.get('/docs', (_req, res) => {
     notes: [
       'The Zen free-tier gate requires streamed requests; non-streaming clients get the folded SSE back as one JSON object.',
       'Muse Spark free models are Responses-only and are translated automatically for chat clients.',
-      'Zen rate-limits by egress IP. On 429/502/503/504 (or a gateway 500) the proxy retries once through Cloudflare WARP.',
+      'Zen rate-limits by egress IP. While rotating (Tor), the proxy cycles circuits and replays the request until a fresh exit passes (bounded by IP_ROTATE_MAX / IP_ROTATE_RETRY_DEADLINE_MS); WARP remains the last-resort failover.',
       'The last rejected upstream response (status, headers, retry-after, message, body up to 2KB) is kept as lastRejection in the stats snapshot and surfaced in the desktop event feed and logs.',
-      'The 200k context advertised for deepseek-v4.1-flash-free is conservative catalog metadata: prompts of 395,297 and 919,735 tokens were accepted live (200 OK in 11.5s and 17.0s, measured 2026-10-15). The real ceiling is 1,048,576 tokens (2^20) — same window as the paid variant; raise limit.context in clients if needed.',
+      'The 200k context advertised for deepseek-v4.1-flash-free and glm-5.3-flash-free is conservative metadata for the client budget, not a service limit: prompts of 395,297 and 919,735 tokens (deepseek, 2026-10-15) and 512,613 / 899,857 / 919,293 / 922,038 tokens (glm-5.3-flash, 2026-10-16) were accepted live with 200 OK through the proxy; glm rejected ~926k with context_length_exceeded. The catalog now advertises the real ceilings: deepseek 1,048,576 (2^20) and glm-5.3-flash 900,000 (verified-safe round value). Raise limit.context in clients to match.',
     ],
   });
 });

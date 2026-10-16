@@ -174,6 +174,26 @@ Nos dois testes: modelo `opencode/deepseek-v4.1-flash-free` (tier gratuito, sem 
 
 > Estes testes medem **capacidade de contexto**, não equivalência de backend: sem logprobs/detalhes internos não dá para afirmar que a variante gratuita usa os mesmos pesos/quantização da paga — apenas que ambas expõem a mesma janela do DeepSeek V4.1 Flash, com saídas determinísticas indistinguíveis nos testes de terceiros.
 
+### 8.1 GLM 5.3 Flash Free — mesma verificação (16/10/2026)
+
+O `glm-5.3-flash-free` repete o padrão (200k anunciado, backend aceitando muito mais), mas com uma borda própria, medida com a mesma técnica:
+
+| Teste | Prompt enviado | `usage.prompt_tokens` | Status / latência |
+|---|---|---|---|
+| 1º | 1.500.000 caracteres | **512.613** | `200` em 33,7s |
+| 2º | 2.624.000 caracteres | **899.857** | `200` em 61,9s |
+| 3º | 2.680.000 caracteres | **919.293** | `200` em 73,3s |
+| 4º | 2.688.000 caracteres | **922.038** | `200` em 48,4s |
+| 5º | 2.700.000+ caracteres | ~926k | `400` — `[context_length_exceeded] The prompt exceeds the context window this endpoint can start from` |
+
+**Borda do glm:** entre **922.038** (aceito) e **~926k** (rejeitado) — o gateway reserva parte da janela para o "start", então a maior entrada verificada é ~922k (≈88% de 1M), menor que o que o deepseek aceitou. Por isso o catálogo adota **900.000** como valor redondo seguro (verificado a 899.857), replicado em clientes.
+
+**Notas:**
+
+- Rejeição de contexto vem como `400` com `code: context_length_exceeded` — não entra no ciclo de rotação de circuito (nem deve: trocar de exit não resolve prompt grande).
+- Lotes grandes oscilam: o mesmo tamanho pode pegar `429` "Endpoint is unavailable" (capacidade) e passar no retry — comportamento do gateway, não da contagem.
+- Consumo de cota: os testes somados enviaram ~7,4M de tokens de entrada no tier gratuito (deepseek ~1,3M + glm ~6,1M) — útil saber antes de repetir a brincadeira.
+
 ---
 
 ## 9. Exemplos de payload (copiar e colar)

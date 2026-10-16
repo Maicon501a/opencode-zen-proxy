@@ -59,11 +59,12 @@ Authorization: Bearer sk-zen-…
 
 ## Modelos e limites de contexto
 
-Valores oficiais da catalogação **models.dev** (a mesma fonte que o cliente oficial usa). Use-os para configurar `limit.context` / `limit.output` no seu cliente.
+Valores da catalogação **models.dev** (a mesma fonte que o cliente oficial usa), **corrigidos pelos tetos reais medidos ao vivo** para `deepseek-v4.1-flash-free` e `glm-5.3-flash-free` (nota abaixo). Use-os para configurar `limit.context` / `limit.output` no seu cliente.
 
 | Modelo | Contexto | Saída máx. | Entradas | API |
 |---|---|---|---|---|
-| `opencode/deepseek-v4.1-flash-free` | **200.000** | 32.000 | texto, imagem | chat |
+| `opencode/deepseek-v4.1-flash-free` | **1.048.576** | 32.000 | texto, imagem | chat |
+| `opencode/glm-5.3-flash-free` | **900.000** | 32.000 | texto, imagem, vídeo, pdf | chat |
 | `opencode/big-pickle` | **200.000** | 32.000 | texto | chat |
 | `opencode/mimo-v2.6-flash-free` | **200.000** | 32.000 | texto, imagem, áudio, vídeo | chat |
 | `opencode/cat-jam-free` | 262.144 | 131.072 | texto | chat |
@@ -77,7 +78,7 @@ Valores oficiais da catalogação **models.dev** (a mesma fonte que o cliente of
 
 O prefixo `opencode/` é opcional em todos: `deepseek-v4.1-flash-free` funciona igual. Aliases curtos também funcionam (`deepseek-v4.1`, `cat-jam`, `step-5`, ...), inclusive com sufixo de esforço (`-low`, `-high`, `-max`).
 
-> **Contexto real vs. metadado:** o `deepseek-v4.1-flash-free` anuncia 200k no catálogo, mas o backend aceita **~1M** — prompts de **395.297** e **919.735 tokens** passaram com `200` (11,5s e 17,0s, medidos via proxy em 15/10/2026), e o teto real é **1.048.576 tokens** (2²⁰), igual à variante paga. Se seu cliente compacta histórico cedo demais, eleve o `limit.context` (ex.: `1000000`) — é o cliente que se limita, não o serviço.
+> **Contexto real vs. metadado:** `deepseek-v4.1-flash-free` e `glm-5.3-flash-free` anunciam 200k no catálogo, mas o backend aceita muito mais. Deepseek: **395.297** e **919.735 tokens** passaram com `200` (15/10/2026) — teto real **1.048.576** (2²⁰). GLM 5.3 flash: **512.613 / 899.857 / 919.293 / 922.038 tokens** passaram com `200` (16/10/2026) e ~926k foi rejeitado com `context_length_exceeded` — maior entrada verificada ~922k. Neste proxy o catálogo já expõe os tetos reais (deepseek `1048576`, glm `900000`); no seu cliente, eleve o `limit.context` para acompanhar — é o cliente que se limita, não o serviço.
 
 > **Capacidades verificadas ao vivo (15/10/2026):** tool calling (não-stream e stream), visão, vídeo e áudio — todos passaram pelo proxy via Tor (20/21 de primeira, +1 retry após 429 de capacidade). Detalhes e exemplos: `docs/COMPATIBILIDADE.md` no repositório.
 
@@ -98,7 +99,11 @@ Adicione no seu `opencode.json`:
       "models": {
         "opencode/deepseek-v4.1-flash-free": {
           "name": "DeepSeek V4.1 Flash Free",
-          "limit": { "context": 200000, "output": 32000 }
+          "limit": { "context": 1048576, "output": 32000 }
+        },
+        "opencode/glm-5.3-flash-free": {
+          "name": "GLM 5.3 Flash Free",
+          "limit": { "context": 900000, "output": 32000 }
         },
         "opencode/cat-jam-free": {
           "name": "Cat Jam Free",
