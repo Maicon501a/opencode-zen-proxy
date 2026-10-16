@@ -191,6 +191,7 @@ O `glm-5.3-flash-free` repete o padrão (200k anunciado, backend aceitando muito
 
 **Notas:**
 
+- **Conteúdo aceito:** o glm-5.3-flash aceita **texto e imagem** apenas — `video_url` retorna `400 [invalid_value] ... content part type "video_url" is not supported; only text and image_url are` (medido ao vivo em 16/10/2026, reproduzido via proxy). O proxy agora valida content parts contra o catálogo **antes** de enviar: erro claro apontando a mensagem do histórico e modelos alternativos com o suporte pedido.
 - Rejeição de contexto vem como `400` com `code: context_length_exceeded` — não entra no ciclo de rotação de circuito (nem deve: trocar de exit não resolve prompt grande).
 - Lotes grandes oscilam: o mesmo tamanho pode pegar `429` "Endpoint is unavailable" (capacidade) e passar no retry — comportamento do gateway, não da contagem.
 - Consumo de cota: os testes somados enviaram ~7,4M de tokens de entrada no tier gratuito (deepseek ~1,3M + glm ~6,1M) — útil saber antes de repetir a brincadeira.

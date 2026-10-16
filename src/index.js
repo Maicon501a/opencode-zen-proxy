@@ -10,7 +10,7 @@ const transport = require('./services/transport');
 const stats = require('./services/stats');
 const keys = require('./services/keys');
 
-const VERSION = '2.3.0';
+const VERSION = '2.3.1';
 
 const app = createApp();
 

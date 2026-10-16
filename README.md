@@ -380,7 +380,7 @@ Os modelos do tier gratuito, acessíveis com o token `public` (limites oficiais 
 | ID do Modelo | Nome | Contexto | Saída máx. | Tools | Vision | Vídeo | Áudio |
 |---|---|--:|--:|:--:|:--:|:--:|:--:|
 | `opencode/deepseek-v4.1-flash-free` | DeepSeek V4.1 Flash Free | 1.048.576 | 32.000 | ✅ | ✅ | — | — |
-| `opencode/glm-5.3-flash-free` | GLM 5.3 Flash Free | 900.000 | 32.000 | ✅ | ✅ | ✅ | — |
+| `opencode/glm-5.3-flash-free` | GLM 5.3 Flash Free | 900.000 | 32.000 | ✅ | ✅ | — | — |
 | `opencode/space-bunny-free` | Space Bunny Free | 1.048.576 | 524.288 | ✅ | ✅ | ✅ | — |
 | `opencode/cat-jam-free` | Cat Jam Free | 262.144 | 131.072 | ✅ | — | — | — |
 | `opencode/mimo-v2.6-flash-free` | MiMo V2.6 Flash Free | 200.000 | 32.000 | ✅ | ✅ | ✅ | ✅ |
@@ -533,7 +533,7 @@ Este proxy preserva o **function calling nativo**. O `opencode serve` intercepta
 Use o campo `reasoning_effort` na requisição: `low`, `high` ou `max` (valores como `medium`/`xhigh` são mapeados automaticamente). Por padrão o proxy usa `high`. Mude o padrão global com a variável `DEFAULT_REASONING_EFFORT`. Veja a seção [Controlando o Esforço de Raciocínio](#3-controlando-o-esforço-de-raciocínio-reasoning_effort).
 
 **Os modelos aceitam imagem, vídeo e áudio?**
-Sim — conforme o modelo. Verificado ao vivo em 15/10/2026: visão em `mimo-v2.6`, `deepseek-v4.1`, `nemotron-3.5-super-vl` e `space-bunny`; vídeo em `space-bunny`, `step-5` e `mimo-v2.6`; áudio em `mimo-v2.6`. Envie as partes `image_url`, `video_url` e `input_audio` (data URI base64 funciona). Matriz completa por modelo: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
+Sim — conforme o modelo. Verificado ao vivo: visão em `mimo-v2.6`, `deepseek-v4.1`, `nemotron-3.5-super-vl`, `space-bunny` (15/10/2026) e `glm-5.3-flash` (16/10/2026); vídeo em `space-bunny`, `step-5` e `mimo-v2.6`; áudio em `mimo-v2.6`. Envie as partes `image_url`, `video_url` e `input_audio` (data URI base64 funciona). O `glm-5.3-flash` aceita **apenas texto e imagem** — `video_url` nele é rejeitado pelo gateway (só `text` e `image_url`), e o proxy agora valida isso **antes** de enviar: erro claro apontando a mensagem do histórico + modelos com suporte a vídeo. Matriz completa por modelo: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).
 
 **O contexto do `deepseek-v4.1-flash-free` (e do `glm-5.3-flash-free`) é mesmo 200k?**
 Não — os 200.000 tokens são metadado conservador do catálogo (orçamento do cliente, não intensidade do serviço). Verificado ao vivo em 15/10/2026: deepseek com **395.297 tokens** (1,07M de caracteres; `200 OK` em 11,5s) e **919.735 tokens** (2,49M de caracteres; `200 OK` em 17,0s, com 395k servidos pelo prompt cache) — tudo via Tor, sem rate-limit. O teto real do deepseek é **1.048.576 tokens** (2²⁰) — o mesmo da variante paga. Em 16/10/2026, o mesmo teste no **glm-5.3-flash-free**: **512.613 / 899.857 / 919.293 / 922.038 / 924.124 tokens** todos aceitos com `200` (o de 924k em 181s) e ~926k rejeitado com `context_length_exceeded` — maior entrada verificada **924.124**, então o catálogo adota **900.000** como valor redondo seguro. Em clientes, eleve `limit.context` (deepseek `1048576`; glm `900000`) para evitar compactação prematura de histórico; a sobrescrita não muda o serviço, só para de subestimar o cliente. Detalhes: [docs/COMPATIBILIDADE.md](docs/COMPATIBILIDADE.md).

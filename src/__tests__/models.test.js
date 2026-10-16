@@ -11,6 +11,8 @@ const {
   mapZenReasoningEffort,
   isFreeModel,
   getModelInfo,
+  findUnsupportedParts,
+  modelsSupportingModality,
 } = require('../config/models');
 
 describe('Zen free model catalog', () => {
@@ -175,6 +177,48 @@ describe('Zen free model catalog', () => {
       expect(model.name).toBe('MiMo V2.6 Flash Free');
       expect(model.supportsVision).toBe(true);
       expect(getModelInfo('nope')).toBeNull();
+    });
+  });
+
+  describe('findUnsupportedParts()', () => {
+    const videoBody = {
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'o que tem no vídeo?' },
+          { type: 'video_url', video_url: { url: 'data:video/mp4;base64,AA' } },
+        ],
+      }],
+    };
+
+    it('flags video parts on text+image models (glm)', () => {
+      expect(findUnsupportedParts(videoBody, 'glm-5.3-flash-free')).toEqual([
+        { index: 0, part: 'video_url', modality: 'video' },
+      ]);
+      expect(findUnsupportedParts(videoBody, 'opencode/glm-5.3-flash-free')).toHaveLength(1);
+    });
+
+    it('accepts image parts those models declare', () => {
+      const body = { messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'x' } }] }] };
+      expect(findUnsupportedParts(body, 'glm-5.3-flash-free')).toEqual([]);
+    });
+
+    it('flags images on text-only models', () => {
+      const body = { messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'x' } }] }] };
+      expect(findUnsupportedParts(body, 'cat-jam-free')).toHaveLength(1);
+    });
+
+    it('stays silent for unknown ids and Responses models', () => {
+      expect(findUnsupportedParts(videoBody, 'gpt-6-astra')).toEqual([]);
+      expect(findUnsupportedParts(videoBody, 'muse-spark-1.3-contributor-free')).toEqual([]);
+    });
+
+    it('lists the free models that support a modality', () => {
+      const video = modelsSupportingModality('video');
+      expect(video).toContain('space-bunny-free');
+      expect(video).toContain('step-5-preview-free');
+      expect(video).toContain('mimo-v2.6-flash-free');
+      expect(video).not.toContain('glm-5.3-flash-free');
     });
   });
 });

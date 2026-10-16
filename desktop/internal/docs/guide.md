@@ -64,7 +64,7 @@ Valores da catalogação **models.dev** (a mesma fonte que o cliente oficial usa
 | Modelo | Contexto | Saída máx. | Entradas | API |
 |---|---|---|---|---|
 | `opencode/deepseek-v4.1-flash-free` | **1.048.576** | 32.000 | texto, imagem | chat |
-| `opencode/glm-5.3-flash-free` | **900.000** | 32.000 | texto, imagem, vídeo, pdf | chat |
+| `opencode/glm-5.3-flash-free` | **900.000** | 32.000 | texto, imagem | chat |
 | `opencode/big-pickle` | **200.000** | 32.000 | texto | chat |
 | `opencode/mimo-v2.6-flash-free` | **200.000** | 32.000 | texto, imagem, áudio, vídeo | chat |
 | `opencode/cat-jam-free` | 262.144 | 131.072 | texto | chat |
@@ -80,7 +80,7 @@ O prefixo `opencode/` é opcional em todos: `deepseek-v4.1-flash-free` funciona 
 
 > **Contexto real vs. metadado:** `deepseek-v4.1-flash-free` e `glm-5.3-flash-free` anunciam 200k no catálogo, mas o backend aceita muito mais. Deepseek: **395.297** e **919.735 tokens** passaram com `200` (15/10/2026) — teto real **1.048.576** (2²⁰). GLM 5.3 flash: **512.613 / 899.857 / 919.293 / 922.038 / 924.124 tokens** passaram com `200` (16/10/2026) e ~926k foi rejeitado com `context_length_exceeded` — maior entrada verificada **924.124**. Neste proxy o catálogo já expõe os tetos reais (deepseek `1048576`, glm `900000`); no seu cliente, eleve o `limit.context` para acompanhar — é o cliente que se limita, não o serviço.
 
-> **Capacidades verificadas ao vivo (15/10/2026):** tool calling (não-stream e stream), visão, vídeo e áudio — todos passaram pelo proxy via Tor (20/21 de primeira, +1 retry após 429 de capacidade). Detalhes e exemplos: `docs/COMPATIBILIDADE.md` no repositório.
+> **Capacidades verificadas ao vivo (15/10/2026):** tool calling (não-stream e stream), visão, vídeo e áudio — todos passaram pelo proxy via Tor (20/21 de primeira, +1 retry após 429 de capacidade). Em 16/10/2026: visão do `glm-5.3-flash` confirmada ao vivo; **`video_url` nele é rejeitado pelo gateway** (aceita só texto e imagem) e o proxy agora barra esse tipo de parte **antes** de enviar, com erro claro apontando a mensagem e sugerindo modelos com vídeo. Detalhes e exemplos: `docs/COMPATIBILIDADE.md` no repositório.
 
 ## Configurar no OpenCode (provider custom)
 

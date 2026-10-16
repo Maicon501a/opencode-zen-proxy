@@ -74,7 +74,7 @@ const FREE_MODELS = [
     apiMode: 'chat',
     supportsTools: true,
     supportsVision: true,
-    inputModalities: ['text', 'image', 'video', 'pdf'],
+    inputModalities: ['text', 'image'],
     contextWindow: 900000,
     maxOutput: 32000,
     reasoning: true,
@@ -365,6 +365,44 @@ function getModelInfo(model) {
   return WIRE_TO_MODEL.get(resolveWireModel(model)) || null;
 }
 
+/** Chat content-part types → the input modality they require. */
+const CHAT_PART_MODALITIES = {
+  video_url: 'video',
+  image_url: 'image',
+  input_audio: 'audio',
+};
+
+/**
+ * Find chat content parts the target model's catalog entry does not declare
+ * support for. Unknown models (and non-chat entries) return an empty list —
+ * the gateway stays the judge for anything outside the curated catalog.
+ *
+ * @returns {{ index: number, part: string, modality: string }[]}
+ */
+function findUnsupportedParts(body, model) {
+  const info = getModelInfo(model);
+  if (!info || info.apiMode !== 'chat' || !body || !Array.isArray(body.messages)) return [];
+  const supported = new Set(info.inputModalities || []);
+  const violations = [];
+  body.messages.forEach((message, index) => {
+    if (!message || !Array.isArray(message.content)) return;
+    for (const part of message.content) {
+      const modality = part && CHAT_PART_MODALITIES[part.type];
+      if (modality && !supported.has(modality)) {
+        violations.push({ index, part: part.type, modality });
+      }
+    }
+  });
+  return violations;
+}
+
+/** Bare ids of the free models that declare an input modality. */
+function modelsSupportingModality(modality) {
+  return FREE_MODELS
+    .filter((m) => (m.inputModalities || []).includes(modality))
+    .map((m) => m.id.slice(PROVIDER_PREFIX.length));
+}
+
 module.exports = {
   FREE_MODELS,
   ALL_MODELS,
@@ -383,4 +421,6 @@ module.exports = {
   mapZenReasoningEffort,
   isFreeModel,
   getModelInfo,
+  findUnsupportedParts,
+  modelsSupportingModality,
 };

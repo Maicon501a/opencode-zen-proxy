@@ -11,6 +11,9 @@ const {
   modelApiMode,
   extractZenEffort,
   mapZenReasoningEffort,
+  getModelInfo,
+  findUnsupportedParts,
+  modelsSupportingModality,
 } = require('../config/models');
 const { applyZenGate, zenGateHeaders, zenAuthHeader } = require('./zenGate');
 const {
@@ -634,6 +637,27 @@ async function shapeSuccess({ res, upstreamFormat, clientFormat, wireModel, clie
  */
 async function forward(payload, clientFormat, options = {}) {
   const plan = planUpstreamRequest(payload, clientFormat);
+
+  // Curated free models: fail fast (and clearly) on content parts their
+  // catalog entry does not support, instead of relaying the raw gateway 400.
+  if (plan.upstreamFormat === 'chat') {
+    const violations = findUnsupportedParts(plan.body, plan.wireModel);
+    if (violations.length > 0) {
+      const info = getModelInfo(plan.wireModel);
+      const { part, modality } = violations[0];
+      const where = [...new Set(violations.map((v) => `messages[${v.index}]`))].join(', ');
+      const alternatives = modelsSupportingModality(modality);
+      throw apiError(
+        `${plan.wireModel} does not accept "${part}" content parts (found in ${where}); `
+        + `it supports ${(info && info.inputModalities ? info.inputModalities : ['text']).join(', ')} only. `
+        + `Remove that part from the conversation or use a model with ${modality} support: `
+        + `${alternatives.length > 0 ? alternatives.join(', ') : 'none in the free catalog'}.`,
+        400,
+        { type: 'invalid_request_error', code: 'unsupported_content_part' },
+      );
+    }
+  }
+
   const endpoint = zenEndpoint(plan.upstreamPath);
   const clientWantsStream = payload.stream === true;
 

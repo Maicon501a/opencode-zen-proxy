@@ -13,7 +13,7 @@ const { createLogger } = require('../services/logger');
 
 const log = createLogger('admin');
 
-const VERSION = '2.3.0';
+const VERSION = '2.3.1';
 
 /**
  * Admin API — the proxy's local control surface, consumed by the desktop app

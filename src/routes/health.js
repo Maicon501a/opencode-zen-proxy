@@ -7,7 +7,7 @@ const { FREE_MODELS } = require('../config/models');
 
 const router = express.Router();
 
-const VERSION = '2.3.0';
+const VERSION = '2.3.1';
 
 /**
  * GET /health
@@ -89,7 +89,7 @@ router.get('/docs', (_req, res) => {
         image: { type: 'image_url', image_url: { url: 'data:image/png;base64,... or https URL' } },
         video: { type: 'video_url', video_url: { url: 'data:video/mp4;base64,...' } },
         audio: { type: 'input_audio', input_audio: { data: '<base64>', format: 'wav' } },
-        models: 'mimo-v2.6 (image/audio/video) · space-bunny & step-5 (image/video) · glm-5.3-flash (image/video/pdf) · muse 1.2/1.3 (image/video/audio/pdf)',
+        models: 'mimo-v2.6 (image/audio/video) · space-bunny & step-5 (image/video) · glm-5.3-flash (image only) · muse 1.2/1.3 (image/video/audio/pdf)',
       },
     },
     authentication: 'Keyless. The proxy presents itself as the official OpenCode CLI and forwards "public" to Zen.',
