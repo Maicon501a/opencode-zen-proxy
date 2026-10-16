@@ -184,9 +184,10 @@ O `glm-5.3-flash-free` repete o padrão (200k anunciado, backend aceitando muito
 | 2º | 2.624.000 caracteres | **899.857** | `200` em 61,9s |
 | 3º | 2.680.000 caracteres | **919.293** | `200` em 73,3s |
 | 4º | 2.688.000 caracteres | **922.038** | `200` em 48,4s |
-| 5º | 2.700.000+ caracteres | ~926k | `400` — `[context_length_exceeded] The prompt exceeds the context window this endpoint can start from` |
+| 5º | 2.694.000 caracteres | **924.124** | `200` em 180,9s (prefill grande fica lento) |
+| 6º | 2.700.000+ caracteres | ~926k | `400` — `[context_length_exceeded] The prompt exceeds the context window this endpoint can start from` |
 
-**Borda do glm:** entre **922.038** (aceito) e **~926k** (rejeitado) — o gateway reserva parte da janela para o "start", então a maior entrada verificada é ~922k (≈88% de 1M), menor que o que o deepseek aceitou. Por isso o catálogo adota **900.000** como valor redondo seguro (verificado a 899.857), replicado em clientes.
+**Borda do glm:** entre **924.124** (aceito) e **~926k** (rejeitado) — o gateway reserva parte da janela para o "start", então a maior entrada verificada é ~924k (≈88% de 1.048.576), abaixo do que o deepseek aceitou (que chega perto da janela cheia). Por isso o catálogo adota **900.000** como valor redondo seguro (verificado a 899.857), replicado em clientes.
 
 **Notas:**
 

@@ -78,7 +78,7 @@ const FREE_MODELS = [
     contextWindow: 900000,
     maxOutput: 32000,
     reasoning: true,
-    description: 'OpenCode Zen free tier · Z.ai GLM · entrada real ~922k (ver docs)',
+    description: 'OpenCode Zen free tier · Z.ai GLM · entrada real ~924k (ver docs)',
   },
   {
     id: 'opencode/cat-jam-free',
