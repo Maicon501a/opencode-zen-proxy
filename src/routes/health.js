@@ -7,7 +7,7 @@ const { FREE_MODELS } = require('../config/models');
 
 const router = express.Router();
 
-const VERSION = '2.1.0';
+const VERSION = '2.3.0';
 
 /**
  * GET /health
