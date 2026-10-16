@@ -41,6 +41,7 @@ describe('Zen free model catalog', () => {
       expect(ids).toEqual(expect.arrayContaining([
         'opencode/space-bunny-free',
         'opencode/deepseek-v4.1-flash-free',
+        'opencode/glm-5.3-flash-free',
         'opencode/cat-jam-free',
         'opencode/mimo-v2.6-flash-free',
         'opencode/nemotron-3.5-lightning-free',
@@ -67,6 +68,7 @@ describe('Zen free model catalog', () => {
       expect(resolveWireModel('space-bunny')).toBe('space-bunny-free');
       expect(resolveWireModel('deepseek-v4.1')).toBe('deepseek-v4.1-flash-free');
       expect(resolveWireModel('deepseek-v4.1-flash')).toBe('deepseek-v4.1-flash-free');
+      expect(resolveWireModel('glm-5.3-flash')).toBe('glm-5.3-flash-free');
       expect(resolveWireModel('cat-jam')).toBe('cat-jam-free');
       expect(resolveWireModel('mimo-v2.6')).toBe('mimo-v2.6-flash-free');
       expect(resolveWireModel('mimo-v2.6-flash')).toBe('mimo-v2.6-flash-free');
